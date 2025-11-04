@@ -1,1 +1,148 @@
 
+:root {
+  --bg-color: #ffffff;
+  --text-color: #000000;
+  --header-bg: #1E1E1E;
+  --row-even: #f0f0f0;
+  --row-odd: #e0e0e0;
+
+  --cell-pos-color: #00c06f;
+  --cell-neg-color: #ff4c4c;
+  --cell-zero-color: #000000;
+
+  --btn-top-bg: #c8fbc8;
+  --btn-bottom-bg: #ffe7e7;
+  --timer-active-color: #005c2f;
+  --timer-left-bg: #3b3b3b;
+
+  --ice-top: #00c06f;
+  --ice-bottom: #ff4c4c;
+}
+[data-theme="dark"] {
+  --bg-color: #111111;
+  --text-color: #ffffff;
+  --header-bg: #1E1E1E;
+  --row-even: #333333;
+  --row-odd: #4a4a4a;
+
+  --cell-pos-color: #00ff80;
+  --cell-neg-color: #ff4c4c;
+  --cell-zero-color: #ffffff;
+  --timer-left-bg: #3b3b3b;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Segoe UI", sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 100vh;
+  padding: 20px;
+}
+.page { width: 100%; max-width: 1100px; }
+
+/* Typography */
+h1 { text-align: center; color: var(--cell-pos-color); margin: 0 0 12px 0; }
+#goalValuePage h1, #seasonPage h1, #seasonMapPage h1, #playerSelectionPage h1 {
+  font-family: "Astroz", "Segoe UI", sans-serif;
+  font-size: 1.69em;
+  font-weight: 700;
+  margin: 0 0 12px 0;
+}
+.center-text { text-align: center; color: #888; margin-top: 6px; }
+
+/* Player selection */
+.player-list { list-style: none; padding: 0; margin: 20px auto; max-width: 600px; }
+.player-list li { display:flex; align-items:center; gap:10px; background:var(--header-bg); border:1px solid #333; border-radius:10px; padding:8px 12px; margin:6px 0; }
+.player-list .num { width:48px; text-align:center; font-weight:700; color:#fff; }
+.player-list input[type="text"] { background:var(--row-even); color:var(--text-color); border:1px solid #444; border-radius:8px; padding:6px 8px; flex:1; }
+
+/* Confirm button */
+.confirm-btn { display:block; margin:20px auto; padding:8px 14px; background:var(--cell-pos-color); border:none; border-radius:8px; font-size:0.95rem; cursor:pointer; color:#fff; font-weight:400; height:40px; line-height:24px; transition:background 0.2s; }
+.confirm-btn:hover { background:#00e07f; }
+
+/* Top-bar (buttons) - centered above page content */
+.top-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 10px 0;
+  margin-bottom: 10px;
+}
+
+/* Buttons */
+.top-btn {
+  background: #2b2b2b;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  transition: background 0.2s;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 400;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+.top-btn:hover { background:#3b3b3b; }
+.top-btn.export-csv { background:#46798e; color:#fff; }
+.top-btn.export-season { background:#e3fba7; color:#000; }
+.top-btn.season-highlight { background:#44bb91; color:#fff; }
+.import-csv-btn { background:#010741; color:#fff; }
+.reset-btn { font-weight:700; background:#b22222; color:#fff; }
+
+/* Timer specialized */
+.timer { font-size:1.05rem; padding:8px 10px; height:36px; border-radius:8px; color:#fff; }
+.timer-left { background:var(--timer-left-bg); }
+
+/* Table styles */
+table { width:100%; border-collapse:collapse; font-size:0.95rem; background:transparent; }
+thead th { background:var(--header-bg); padding:8px 6px; border-bottom:2px solid rgba(0,0,0,0.4); text-align:center; color:var(--text-color); position: sticky; top: 0; z-index: 40; }
+thead th:nth-child(2) { text-align:left; padding-left:12px; }
+th, td { padding:8px 6px; text-align:center; border-bottom:1px solid rgba(0,0,0,0.06); color:var(--text-color); }
+.even-row { background-color: var(--row-even); }
+.odd-row { background-color: var(--row-odd); }
+
+/* Marker dot */
+.marker-dot { position:absolute; width:14px; height:14px; border-radius:50%; transform:translate(-50%,-50%); box-shadow:0 0 6px rgba(0,0,0,0.55); border:2px solid rgba(255,255,255,0.12); cursor:pointer; }
+
+/* Torbild */
+.torbild-layout { display:flex; justify-content:space-between; align-items:stretch; gap:20px; height:calc(100vh - 160px); margin-top:20px; }
+.field-column { flex:1; display:flex; justify-content:center; align-items:center; min-width:220px; }
+.goal-column { flex:0 0 320px; display:flex; flex-direction:column; gap:15px; justify-content:flex-start; }
+.img-box { position:relative; width:100%; height:100%; display:flex; align-items:center; justify-content:center; overflow:hidden; background:#1e1e1e; border-radius:8px; padding:6px; }
+.img-box img { max-width:100%; max-height:100%; object-fit:contain; display:block; }
+
+/* Time tracking */
+.time-tracking-box { display:flex; flex-direction:column; justify-content:flex-end; background:#111; border:2px solid rgba(255,255,255,0.04); border-radius:10px; padding:10px 14px; color:#fff; font-size:0.95rem; height:100%; gap:10px; }
+.period { display:grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: auto minmax(1.4em, auto) auto; align-items:center; justify-items:center; row-gap:6px; column-gap:8px; padding:6px 10px; background: rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.04); border-radius:8px; }
+.time-btn { width:100%; height:28px; border:none; border-radius:6px; font-weight:700; font-size:13px; cursor:pointer; transition: transform 0.08s, background 0.15s; }
+.period-buttons.top-row .time-btn { background: var(--btn-top-bg); color: #0a0a0a; }
+.period-buttons.bottom-row .time-btn { background: var(--btn-bottom-bg); color: #000; }
+
+/* Season / Goal Value */
+#seasonPage table { width:auto; table-layout:auto; border-collapse:collapse; font-size:0.95rem; margin:0 auto; }
+#seasonPage .total-row td { background: var(--header-bg) !important; color: var(--text-color) !important; font-weight:700 !important; border-top:2px solid rgba(0,0,0,0.4); }
+.goalvalue-title-input { background:transparent; border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:4px 6px; color:inherit; text-align:center; }
+
+/* Responsive */
+@media (max-width: 900px) {
+  .torbild-layout { flex-direction: column; height: auto; }
+  .goal-column { flex: 1 1 auto; width: 100%; }
+  .top-bar { gap: 6px; justify-content: center; }
+  .top-btn { padding: 6px 8px; font-size: 0.88rem; height: 34px; }
+}
+
+/* Accessibility */
+button:focus, input:focus, select:focus { outline: 2px solid rgba(0,160,120,0.25); outline-offset: 2px; }
