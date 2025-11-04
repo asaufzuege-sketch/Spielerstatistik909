@@ -874,7 +874,7 @@ document.addEventListener("DOMContentLoaded", () => {
     renderSeasonMapPage();
   }
 
-  // --- NEW: renderGoalAreaStats() (unchanged visual behavior, opacity previously set) ---
+  // --- NEW: renderGoalAreaStats() (unchanged visual behavior, opacity previously set) ---  
   function renderGoalAreaStats() {
     const seasonMapRoot = document.getElementById("seasonMapPage");
     if (!seasonMapRoot) return;
