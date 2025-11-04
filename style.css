@@ -2,7 +2,7 @@
   /* Grundfarben Light Mode */
   --bg-color: #ffffff;
   --text-color: #000000;
-  --header-bg: #1E1E1E; /* Titel-/Totalzeilenfarbe */
+  --header-bg: #1E1E1E; /* geändert: Titel-/Totalzeilenfarbe */
   --row-even: #f0f0f0;
   --row-odd: #e0e0e0;
 
@@ -28,7 +28,7 @@
 [data-theme="dark"] {
   --bg-color: #111111;
   --text-color: #ffffff;
-  --header-bg: #1E1E1E;
+  --header-bg: #1E1E1E; /* gleiche Header-Farbe im Dark-Mode */
   --row-even: #333333;
   --row-odd: #4a4a4a;
 
@@ -54,25 +54,35 @@ body {
   max-width: 1100px;
 }
 
+/* Page-top: per-page container for centered buttons */
+.page-top {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+
 /* =========================================
    TYPOGRAFIE
    ========================================= */
+/* Standard h1 remains baseline; specific pages use Astroz via selectors below */
 h1 {
   text-align: center;
-  color: var(--cell-pos-color);
+  color: var(--cell-pos-color); /* green title for SpielerAuswahl, Season, Goal Value, Season Map */
   margin: 0 0 12px 0;
 }
 
+/* Apply Astroz font & 30% larger than the previous baseline */
 #goalValuePage h1,
 #seasonPage h1,
 #seasonMapPage h1,
 #playerSelectionPage h1 {
   font-family: "Astroz", "Segoe UI", sans-serif;
-  font-size: 1.69em;
+  font-size: 1.69em; /* larger relative to baseline */
   font-weight: 700;
   margin: 0 0 12px 0;
 }
 
+/* center text, small */
 .center-text {
   text-align: center;
   color: #888;
@@ -126,6 +136,7 @@ h1 {
   flex: 1;
 }
 
+/* Confirm button - match top-button height and not bold (Reset is only bold button) */
 .confirm-btn {
   display: block;
   margin: 20px auto;
@@ -136,8 +147,8 @@ h1 {
   font-size: 0.95rem;
   cursor: pointer;
   color: #fff;
-  font-weight: 400;
-  height: 40px;
+  font-weight: 400; /* not bold */
+  height: 40px; /* same height as top-bar buttons */
   line-height: 24px;
   transition: background 0.2s;
 }
@@ -147,17 +158,8 @@ h1 {
 }
 
 /* =========================================
-   PAGE TOOLBAR / BUTTONS (zentriert über Inhalt)
+   TOP BAR / BUTTONS
    ========================================= */
-.page-toolbar {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 10px;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 8px 12px;
-}
-
 .top-bar {
   display: flex;
   flex-wrap: wrap;
@@ -196,7 +198,7 @@ h1 {
   background: #4e4e4e;
 }
 
-/* Export CSV button */
+/* Export CSV button: UPDATED to #46798e */
 .top-btn.export-csv {
   background: #46798e;
   color: #fff;
@@ -205,7 +207,7 @@ h1 {
   filter: brightness(0.95);
 }
 
-/* Season and Season Map highlight color */
+/* NEW: Season and Season Map highlight color #44bb91 */
 .top-btn.season-highlight {
   background: #44bb91;
   color: #fff;
@@ -214,7 +216,7 @@ h1 {
   filter: brightness(0.95);
 }
 
-/* Export Season and Export Season Map buttons color */
+/* NEW: Export Season and Export Season Map buttons color #e3fba7 (light) */
 .top-btn.export-season {
   background: #e3fba7;
   color: #000;
@@ -223,10 +225,11 @@ h1 {
   filter: brightness(0.95);
 }
 
-/* Import CSV button style */
+/* Import CSV button (created dynamically in JS) - now same base .top-btn and specialized color */
 .import-csv-btn {
-  background: #010741;
+  background: #010741; /* import CSV requested color */
   color: #fff;
+  /* sizing is inherited from .top-btn when element has both classes */
 }
 
 /* Danger / reset buttons - Reset remains bold */
@@ -250,7 +253,7 @@ h1 {
   font-size: 1.1rem;
   padding: 10px 16px;
   transition: background-color 0.25s;
-  height: 40px;
+  height: 40px; /* match other top buttons */
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -268,9 +271,10 @@ h1 {
 /* =========================================
    STATISTIK-TABELLE
    ========================================= */
+/* Remove scrolling bar for datenerfassung (stats) table container as requested */
 #statsScrollContainer {
-  max-height: none;
-  overflow-y: visible;
+  max-height: none; /* removed fixed height */
+  overflow-y: visible; /* no scrollbar */
 }
 
 table {
