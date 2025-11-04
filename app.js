@@ -86,7 +86,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const seasonMapBoxesSelector = "#seasonMapPage .field-box, #seasonMapPage .goal-img-box";
 
   const torbildTimeTrackingBox = document.getElementById("timeTrackingBox");
-  const seasonMapTimeTrackingBox = document.getElementById("seasonTimeTrackingBox");
+  const seasonMapTimeTrackingBox = document.getElementById("seasonMapTimeTrackingBox");
 
   const goalValueContainer = document.getElementById("goalValueContainer");
   const resetGoalValueBtn = document.getElementById("resetGoalValueBtn");
@@ -2192,25 +2192,3 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 });
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- SEASON SEITE -->
-  <div id="seasonPage" class="page" style="display:none;">
-    <div class="page-toolbar" id="seasonToolbar">
-      <div class="top-bar">
-        <button id="backToStatsFromSeasonBtn" class="top-btn">← Zurück</button>
-        <button id="exportSeasonBtn" class="top-btn export-csv">Export CSV</button>
-        <button id="resetSeasonBtn" class="top-btn danger-btn reset-btn">Reset</button>
-      </div>
-    </div>
-
-    <h1>Season</h1>
-    <div id="seasonContainer"></div>
-  </div>
-
-  <script src="app.js"></script>
-</body>
-</html>
