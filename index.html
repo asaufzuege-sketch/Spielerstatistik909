@@ -18,8 +18,8 @@
 
   <!-- STATS SEITE -->
   <div id="statsPage" class="page" style="display:none;">
-    <!-- ZENTRIERTE TOOLBAR ÜBER TABELLE -->
-    <div class="page-toolbar" id="statsToolbar">
+    <!-- Top bar placed per-page and centered above content -->
+    <div class="page-top">
       <div class="top-bar">
         <button id="timerBtn" class="top-btn timer timer-left reset" aria-label="Spieluhr">00:00</button>
         <button id="selectPlayersBtn" class="top-btn">Spieler wählen</button>
@@ -40,8 +40,7 @@
 
   <!-- GOAL MAP SEITE -->
   <div id="torbildPage" class="page" style="display:none;">
-    <!-- ZENTRIERTE TOOLBAR ÜBER BILDER -->
-    <div class="page-toolbar" id="torbildToolbar">
+    <div class="page-top">
       <div class="top-bar">
         <button id="backToStatsBtn" class="top-btn back-btn">← Zurück</button>
         <button id="exportSeasonMapBtn" class="top-btn export-season">Export Season Map</button>
@@ -138,7 +137,7 @@
 
   <!-- GOAL VALUE PAGE -->
   <div id="goalValuePage" class="page" style="display:none;">
-    <div class="page-toolbar" id="goalValueToolbar">
+    <div class="page-top">
       <div class="top-bar">
         <button id="backFromGoalValueBtn" class="top-btn back-btn">← Zurück</button>
         <button id="resetGoalValueBtn" class="top-btn danger-btn reset-btn">Reset</button>
@@ -153,7 +152,7 @@
 
   <!-- SEASON MAP PAGE -->
   <div id="seasonMapPage" class="page" style="display:none;">
-    <div class="page-toolbar" id="seasonMapToolbar">
+    <div class="page-top">
       <div class="top-bar">
         <button id="backToStatsFromSeasonMapBtn" class="top-btn back-btn">← Zurück</button>
         <button id="resetSeasonMapBtn" class="top-btn danger-btn reset-btn">Reset</button>
@@ -253,10 +252,11 @@
 
   <!-- SEASON SEITE -->
   <div id="seasonPage" class="page" style="display:none;">
-    <div class="page-toolbar" id="seasonToolbar">
-      <div class="top-bar">
+    <div class="page-top">
+      <div class="top-bar" style="width:100%; display:flex; align-items:center; gap:8px;">
         <button id="backToStatsFromSeasonBtn" class="top-btn">← Zurück</button>
         <button id="exportSeasonBtn" class="top-btn export-csv">Export CSV</button>
+        <div style="flex:1"></div>
         <button id="resetSeasonBtn" class="top-btn danger-btn reset-btn">Reset</button>
       </div>
     </div>
