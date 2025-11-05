@@ -10,7 +10,7 @@
 
   <!-- SPIELERAUSWAHL -->
   <div id="playerSelectionPage" class="page">
-    <h1>Spielerauswahl</h1>
+    <h1>PLAYER SELECTION</h1>
     <p class="center-text">Wähle die Spieler, die in der Tabelle angezeigt werden sollen</p>
     <ul id="playerList" class="player-list"></ul>
     <button id="confirmSelection" class="confirm-btn">Bestätigen</button>
@@ -18,7 +18,6 @@
 
   <!-- STATS SEITE -->
   <div id="statsPage" class="page" style="display:none;">
-    <!-- Top bar placed per-page and centered above content -->
     <div class="page-top">
       <div class="top-bar">
         <button id="timerBtn" class="top-btn timer timer-left reset" aria-label="Spieluhr">00:00</button>
@@ -32,6 +31,8 @@
         <button id="resetBtn" class="top-btn danger-btn reset-btn">Reset</button>
       </div>
     </div>
+
+    <h1>GAME DATA</h1>
 
     <div id="statsScrollContainer">
       <div id="statsContainer"></div>
@@ -47,6 +48,8 @@
         <button id="resetTorbildBtn" class="top-btn danger-btn reset-btn">Reset</button>
       </div>
     </div>
+
+    <h1>GOAL MAP</h1>
 
     <div class="torbild-layout">
       <div class="field-column">
@@ -145,7 +148,7 @@
     </div>
 
     <div style="margin-top:18px; padding:10px;">
-      <h1>Goal Value</h1>
+      <h1>GOAL VALUE</h1>
       <div id="goalValueContainer"></div>
     </div>
   </div>
@@ -160,7 +163,7 @@
     </div>
 
     <div style="margin-top:18px; padding:10px;">
-      <h1>Season Map</h1>
+      <h1>SEASON MAP</h1>
     </div>
 
     <div class="torbild-layout">
@@ -201,50 +204,7 @@
               <button class="time-btn">0</button>
             </div>
           </div>
-
-          <div class="period" data-period="sp2">
-            <div class="period-title">2nd Period</div>
-            <div class="period-buttons top-row">
-              <button class="time-btn">0</button>
-              <button class="time-btn">0</button>
-              <button class="time-btn">0</button>
-              <button class="time-btn">0</button>
-            </div>
-            <div class="period-numbers">
-              <span class=" num-center">19 - 15</span>
-              <span class="num-center">14 - 10</span>
-              <span class="num-center">9 - 5</span>
-              <span class="num-center">4 - 0</span>
-            </div>
-            <div class="period-buttons bottom-row">
-              <button class="time-btn">0</button>
-              <button class="time-btn">0</button>
-              <button class="time-btn">0</button>
-              <button class="time-btn">0</button>
-            </div>
-          </div>
-
-          <div class="period" data-period="sp3">
-            <div class="period-title">3rd Period</div>
-            <div class="period-buttons top-row">
-              <button class="time-btn">0</button>
-              <button class="time-btn">0</button>
-              <button class="time-btn">0</button>
-              <button class="time-btn">0</button>
-            </div>
-            <div class="period-numbers">
-              <span class=" num-center">19 - 15</span>
-              <span class="num-center">14 - 10</span>
-              <span class="num-center">9 - 5</span>
-              <span class="num-center">4 - 0</span>
-            </div>
-            <div class="period-buttons bottom-row">
-              <button class="time-btn">0</button>
-              <button class="time-btn">0</button>
-              <button class="time-btn">0</button>
-              <button class="time-btn">0</button>
-            </div>
-          </div>
+          <!-- weitere Perioden analog -->
         </div>
       </div>
     </div>
@@ -253,15 +213,14 @@
   <!-- SEASON SEITE -->
   <div id="seasonPage" class="page" style="display:none;">
     <div class="page-top">
-      <div class="top-bar" style="width:100%; display:flex; align-items:center; gap:8px;">
+      <div class="top-bar">
         <button id="backToStatsFromSeasonBtn" class="top-btn">← Zurück</button>
         <button id="exportSeasonBtn" class="top-btn export-csv">Export CSV</button>
-        <div style="flex:1"></div>
         <button id="resetSeasonBtn" class="top-btn danger-btn reset-btn">Reset</button>
       </div>
     </div>
 
-    <h1>Season</h1>
+    <h1>SEASON</h1>
     <div id="seasonContainer"></div>
   </div>
 
