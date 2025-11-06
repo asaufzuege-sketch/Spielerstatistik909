@@ -1,10 +1,10 @@
 // app.js
 // Vollständige Datei: ersetzt die alte app.js 1:1
-// Änderungen speziell für diese Version:
-// - Goal Value: Zeilen gestreift (even/odd) wie Game Data/Season (bereits vorhanden).
-// - Die "Value"-Spalte-Werte werden fett dargestellt (sowohl initial als auch nach Updates).
-// - Die "Spieler"-Spalte im GoalValue-Table ist deutlich breiter (minWidth), sodass Namen nebeneinander stehen können.
-// - Sonstige Logik (Timer, Marker, Season, Export/Import, etc.) wie vorher.
+// Änderungen speziell in dieser Ausgabe:
+// - Bezeichnung "Opponent" → "Gegner" (Default-Namen und UI).
+// - Namensspalte in GoalValue nur so breit wie nötig (minWidth reduziert), aber keine Umbrüche (nowrap) damit Namen nebeneinander stehen.
+// - Werte > 0 in GoalValue (Zellen + berechnete Value-Spalte) werden grün und fett dargestellt.
+// - Restliche Logik (Timer, Marker, Season-Table, Import/Export...) unverändert / erhalten.
 
 document.addEventListener("DOMContentLoaded", () => {
   // --- Elements (buttons remain in DOM per page) ---
@@ -452,7 +452,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // --- Marker helpers with FIELD image sampling ---
-  const LONG_MARK_MS_INTERNAL = 600;
   const samplerCache = new WeakMap();
   function clampPct(v) { return Math.max(0, Math.min(100, v)); }
   function createImageSampler(imgEl) {
@@ -546,6 +545,7 @@ document.addEventListener("DOMContentLoaded", () => {
     container.appendChild(dot);
   }
 
+  // createMarkerBasedOn unchanged
   function createMarkerBasedOn(pos, boxEl, longPress, forceGrey=false) {
     if (!boxEl) return;
 
@@ -563,32 +563,22 @@ document.addEventListener("DOMContentLoaded", () => {
           const iy = pos.yPctImage;
           const isGreen = sampler.isGreenAt(ix, iy, 110, 30);
           const isRed = sampler.isRedAt(ix, iy, 95, 22);
-          if (isGreen) {
-            createMarkerPercent(pos.xPctContainer, pos.yPctContainer, "#00ff66", boxEl, true);
-            return;
-          }
-          if (isRed) {
-            createMarkerPercent(pos.xPctContainer, pos.yPctContainer, "#ff0000", boxEl, true);
-            return;
-          }
+          if (isGreen) { createMarkerPercent(pos.xPctContainer, pos.yPctContainer, "#00ff66", boxEl, true); return; }
+          if (isRed) { createMarkerPercent(pos.xPctContainer, pos.yPctContainer, "#ff0000", boxEl, true); return; }
           return;
         } else {
           const color = pos.yPctImage > 50 ? "#ff0000" : "#00ff66";
           createMarkerPercent(pos.xPctContainer, pos.yPctContainer, color, boxEl, true);
           return;
         }
-      } else {
-        return;
-      }
+      } else return;
     }
 
     if (boxEl.classList.contains("goal-img-box") || boxEl.id === "goalGreenBox" || boxEl.id === "goalRedBox") {
       const img = boxEl.querySelector("img");
       if (!img) return;
       const sampler = createImageSampler(img);
-      if (!sampler || !sampler.valid) {
-        return;
-      }
+      if (!sampler || !sampler.valid) return;
       if (boxEl.id === "goalGreenBox") {
         const ok = sampler.isWhiteAt(pos.xPctContainer, pos.yPctContainer, 220);
         if (!ok) return;
@@ -1027,7 +1017,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (backToStatsFromSeasonMapBtn) backToStatsFromSeasonMapBtn.addEventListener("click", () => showPage("stats"));
   if (document.getElementById("resetSeasonMapBtn")) document.getElementById("resetSeasonMapBtn").addEventListener("click", resetSeasonMap);
 
-  // --- Season export (Stats -> Season) (modified flow) ---
+  // --- Season export (Stats -> Season) (unchanged) ---
   const exportSeasonHandler = () => {
     const proceed = confirm("Spiel zu Season exportieren?");
     if (!proceed) return;
@@ -1880,8 +1870,9 @@ document.addEventListener("DOMContentLoaded", () => {
       const raw = localStorage.getItem("goalValueOpponents");
       if (raw) return JSON.parse(raw);
     } catch (e) {}
+    // default names in German as requested: "Gegner 1", ...
     const defaults = [];
-    for (let i=1;i<=19;i++) defaults.push(`Opponent ${i}`);
+    for (let i=1;i<=19;i++) defaults.push(`Gegner ${i}`);
     return defaults;
   }
   function setGoalValueOpponents(arr) { localStorage.setItem("goalValueOpponents", JSON.stringify(arr)); }
@@ -1907,7 +1898,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let opponents = getGoalValueOpponents();
     if (opponents.length !== 19) {
       const trimmed = opponents.slice(0,19);
-      while (trimmed.length < 19) trimmed.push(`Opponent ${trimmed.length+1}`);
+      while (trimmed.length < 19) trimmed.push(`Gegner ${trimmed.length+1}`);
       setGoalValueOpponents(trimmed);
       opponents = trimmed;
     }
@@ -1956,11 +1947,11 @@ document.addEventListener("DOMContentLoaded", () => {
   function getGoalValueOpponentsSafe() {
     const opp = getGoalValueOpponents();
     const arr = Array.isArray(opp) ? opp.slice(0,19) : [];
-    while (arr.length < 19) arr.push(`Opponent ${arr.length+1}`);
+    while (arr.length < 19) arr.push(`Gegner ${arr.length+1}`);
     return arr;
   }
 
-  // --- Updated: renderGoalValuePage using click/dblclick/touch for goal cells ---
+  // --- Updated: renderGoalValuePage (Gegner labels, name column sizing, positive values green+bold) ---
   function renderGoalValuePage() {
     if (!goalValueContainer) return;
     goalValueContainer.innerHTML = "";
@@ -1978,8 +1969,7 @@ document.addEventListener("DOMContentLoaded", () => {
     table.style.borderCollapse = "collapse";
     table.style.borderRadius = "8px";
     table.style.overflow = "hidden";
-    // keep table-layout auto so wide first column can expand
-    table.style.tableLayout = "auto";
+    table.style.tableLayout = "auto"; // allow opponent columns to flow naturally
 
     const thead = document.createElement("thead");
     const headerRow = document.createElement("tr");
@@ -1988,8 +1978,9 @@ document.addEventListener("DOMContentLoaded", () => {
     thPlayer.style.textAlign = "center";
     thPlayer.style.padding = "8px 6px";
     thPlayer.style.borderBottom = "2px solid #333";
-    thPlayer.style.minWidth = "320px"; // make the player column wide so names can sit side-by-side
-    thPlayer.style.maxWidth = "420px";
+    // "nur so breit wie nötig, dass die Namen nebeneinander stehen" -> use a modest minWidth and nowrap,
+    // so the column expands only enough for names to not wrap horizontally.
+    thPlayer.style.minWidth = "160px";
     thPlayer.style.whiteSpace = "nowrap";
     thPlayer.textContent = "Spieler";
     headerRow.appendChild(thPlayer);
@@ -2001,14 +1992,15 @@ document.addEventListener("DOMContentLoaded", () => {
       th.style.textAlign = "center";
       const input = document.createElement("input");
       input.type = "text";
-      input.value = op;
+      // label changed to "Gegner"
+      input.value = op || `Gegner ${idx+1}`;
       input.className = "goalvalue-title-input";
       input.style.width = "100%";
       input.style.boxSizing = "border-box";
       input.style.textAlign = "center";
       input.addEventListener("change", () => {
         const arr = getGoalValueOpponents();
-        arr[idx] = input.value || `Opponent ${idx+1}`;
+        arr[idx] = input.value || `Gegner ${idx+1}`;
         setGoalValueOpponents(arr);
         ensureGoalValueDataForSeason();
         renderGoalValuePage();
@@ -2029,11 +2021,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const tbody = document.createElement("tbody");
     const valueCellMap = {};
+    const posColorGlobal = getComputedStyle(document.documentElement).getPropertyValue('--cell-pos-color')?.trim() || "#00ff80";
+    const negColorGlobal = getComputedStyle(document.documentElement).getPropertyValue('--cell-neg-color')?.trim() || "#ff4c4c";
+    const zeroColorGlobal = getComputedStyle(document.documentElement).getPropertyValue('--cell-zero-color')?.trim() || "#ffffff";
 
-    // For each player, render a row. For opponent columns, render clickable cells (increment on click, decrement on dblclick / double-tap)
     playerNames.forEach((name, rowIndex) => {
       const row = document.createElement("tr");
-      // stripe rows same as Game Data / Season
       row.classList.add(rowIndex % 2 === 0 ? "even-row" : "odd-row");
       row.style.borderBottom = "1px solid #333";
 
@@ -2042,11 +2035,10 @@ document.addEventListener("DOMContentLoaded", () => {
       tdName.style.textAlign = "left";
       tdName.style.padding = "6px";
       tdName.style.fontWeight = "700";
-      // ensure the name column remains wide on rows as well
-      tdName.style.minWidth = "320px";
-      tdName.style.whiteSpace = "nowrap";
-      tdName.style.overflow = "hidden";
-      tdName.style.textOverflow = "ellipsis";
+      tdName.style.minWidth = "160px"; // only as wide as necessary
+      tdName.style.whiteSpace = "nowrap"; // prevent wrapping; names stay in one line
+      tdName.style.overflow = "visible";
+      tdName.style.textOverflow = "clip";
       row.appendChild(tdName);
 
       const playerVals = (goalData[name] && Array.isArray(goalData[name])) ? goalData[name] : opponents.map(()=>0);
@@ -2062,6 +2054,18 @@ document.addEventListener("DOMContentLoaded", () => {
         const cellVal = Number(playerVals[idx] || 0);
         td.textContent = String(cellVal);
 
+        // apply color/weight depending on value (>0 green+bold, <0 red, 0 neutral)
+        if (cellVal > 0) {
+          td.style.color = posColorGlobal;
+          td.style.fontWeight = "700";
+        } else if (cellVal < 0) {
+          td.style.color = negColorGlobal;
+          td.style.fontWeight = "400";
+        } else {
+          td.style.color = zeroColorGlobal;
+          td.style.fontWeight = "400";
+        }
+
         let clickTimeout = null;
         td.addEventListener("click", () => {
           if (clickTimeout) clearTimeout(clickTimeout);
@@ -2071,10 +2075,19 @@ document.addEventListener("DOMContentLoaded", () => {
             all[name][idx] = Math.max(0, (Number(all[name][idx]||0) + 1));
             setGoalValueData(all);
             td.textContent = String(all[name][idx]);
+            // style based on new value
+            const nv = Number(all[name][idx] || 0);
+            if (nv > 0) { td.style.color = posColorGlobal; td.style.fontWeight = "700"; }
+            else if (nv < 0) { td.style.color = negColorGlobal; td.style.fontWeight = "400"; }
+            else { td.style.color = zeroColorGlobal; td.style.fontWeight = "400"; }
+
             const valCell = valueCellMap[name];
             if (valCell) {
-              valCell.textContent = formatValueNumber(computeValueForPlayer(name));
-              valCell.style.fontWeight = "700"; // ensure bold after update
+              const comp = computeValueForPlayer(name);
+              valCell.textContent = formatValueNumber(comp);
+              if (comp > 0) { valCell.style.color = posColorGlobal; valCell.style.fontWeight = "700"; }
+              else if (comp < 0) { valCell.style.color = negColorGlobal; valCell.style.fontWeight = "400"; }
+              else { valCell.style.color = zeroColorGlobal; valCell.style.fontWeight = "400"; }
             }
             clickTimeout = null;
           }, 200);
@@ -2087,10 +2100,18 @@ document.addEventListener("DOMContentLoaded", () => {
           all[name][idx] = Math.max(0, (Number(all[name][idx]||0) - 1));
           setGoalValueData(all);
           td.textContent = String(all[name][idx]);
+          const nv = Number(all[name][idx] || 0);
+          if (nv > 0) { td.style.color = posColorGlobal; td.style.fontWeight = "700"; }
+          else if (nv < 0) { td.style.color = negColorGlobal; td.style.fontWeight = "400"; }
+          else { td.style.color = zeroColorGlobal; td.style.fontWeight = "400"; }
+
           const valCell = valueCellMap[name];
           if (valCell) {
-            valCell.textContent = formatValueNumber(computeValueForPlayer(name));
-            valCell.style.fontWeight = "700";
+            const comp = computeValueForPlayer(name);
+            valCell.textContent = formatValueNumber(comp);
+            if (comp > 0) { valCell.style.color = posColorGlobal; valCell.style.fontWeight = "700"; }
+            else if (comp < 0) { valCell.style.color = negColorGlobal; valCell.style.fontWeight = "400"; }
+            else { valCell.style.color = zeroColorGlobal; valCell.style.fontWeight = "400"; }
           }
         });
 
@@ -2106,8 +2127,19 @@ document.addEventListener("DOMContentLoaded", () => {
             all[name][idx] = Math.max(0, (Number(all[name][idx]||0) - 1));
             setGoalValueData(all);
             td.textContent = String(all[name][idx]);
+            const nv = Number(all[name][idx] || 0);
+            if (nv > 0) { td.style.color = posColorGlobal; td.style.fontWeight = "700"; }
+            else if (nv < 0) { td.style.color = negColorGlobal; td.style.fontWeight = "400"; }
+            else { td.style.color = zeroColorGlobal; td.style.fontWeight = "400"; }
+
             const valCell = valueCellMap[name];
-            if (valCell) { valCell.textContent = formatValueNumber(computeValueForPlayer(name)); valCell.style.fontWeight = "700"; }
+            if (valCell) {
+              const comp = computeValueForPlayer(name);
+              valCell.textContent = formatValueNumber(comp);
+              if (comp > 0) { valCell.style.color = posColorGlobal; valCell.style.fontWeight = "700"; }
+              else if (comp < 0) { valCell.style.color = negColorGlobal; valCell.style.fontWeight = "400"; }
+              else { valCell.style.color = zeroColorGlobal; valCell.style.fontWeight = "400"; }
+            }
             lastTap = 0;
           } else {
             lastTap = now;
@@ -2118,8 +2150,19 @@ document.addEventListener("DOMContentLoaded", () => {
                 all[name][idx] = Math.max(0, (Number(all[name][idx]||0) + 1));
                 setGoalValueData(all);
                 td.textContent = String(all[name][idx]);
+                const nv = Number(all[name][idx] || 0);
+                if (nv > 0) { td.style.color = posColorGlobal; td.style.fontWeight = "700"; }
+                else if (nv < 0) { td.style.color = negColorGlobal; td.style.fontWeight = "400"; }
+                else { td.style.color = zeroColorGlobal; td.style.fontWeight = "400"; }
+
                 const valCell = valueCellMap[name];
-                if (valCell) { valCell.textContent = formatValueNumber(computeValueForPlayer(name)); valCell.style.fontWeight = "700"; }
+                if (valCell) {
+                  const comp = computeValueForPlayer(name);
+                  valCell.textContent = formatValueNumber(comp);
+                  if (comp > 0) { valCell.style.color = posColorGlobal; valCell.style.fontWeight = "700"; }
+                  else if (comp < 0) { valCell.style.color = negColorGlobal; valCell.style.fontWeight = "400"; }
+                  else { valCell.style.color = zeroColorGlobal; valCell.style.fontWeight = "400"; }
+                }
                 lastTap = 0;
               }
             }, 300);
@@ -2132,17 +2175,18 @@ document.addEventListener("DOMContentLoaded", () => {
       const tdValue = document.createElement("td");
       tdValue.style.padding = "6px";
       tdValue.style.textAlign = "center";
-      // Make computed value bold per user's request (totalwerte in der Value-Spalte sollen fett sein)
-      tdValue.style.fontWeight = "700";
       const computed = computeValueForPlayer(name);
       tdValue.textContent = formatValueNumber(computed);
+      if (computed > 0) { tdValue.style.color = posColorGlobal; tdValue.style.fontWeight = "700"; }
+      else if (computed < 0) { tdValue.style.color = negColorGlobal; tdValue.style.fontWeight = "400"; }
+      else { tdValue.style.color = zeroColorGlobal; tdValue.style.fontWeight = "400"; }
       row.appendChild(tdValue);
       valueCellMap[name] = tdValue;
 
       tbody.appendChild(row);
     });
 
-    // bottom row: weights (selects) remain; user can edit them. Keep stripes consistent.
+    // bottom row: weights (selects)
     const bottomRow = document.createElement("tr");
     bottomRow.classList.add(playerNames.length % 2 === 0 ? "even-row" : "odd-row");
     bottomRow.style.background = "rgba(0,0,0,0.03)";
@@ -2150,7 +2194,7 @@ document.addEventListener("DOMContentLoaded", () => {
     bottomLabel.style.padding = "6px";
     bottomLabel.style.fontWeight = "700";
     bottomLabel.style.textAlign = "center";
-    bottomLabel.textContent = "Goal Value";
+    bottomLabel.textContent = "Gegner"; // label changed
     bottomRow.appendChild(bottomLabel);
 
     const goalValueOptions = [];
@@ -2181,7 +2225,13 @@ document.addEventListener("DOMContentLoaded", () => {
         setGoalValueBottom(arr);
         Object.keys(valueCellMap).forEach(playerName => {
           const el = valueCellMap[playerName];
-          if (el) { el.textContent = formatValueNumber(computeValueForPlayer(playerName)); el.style.fontWeight = "700"; }
+          if (el) {
+            const comp = computeValueForPlayer(playerName);
+            el.textContent = formatValueNumber(comp);
+            if (comp > 0) { el.style.color = posColorGlobal; el.style.fontWeight = "700"; }
+            else if (comp < 0) { el.style.color = negColorGlobal; el.style.fontWeight = "400"; }
+            else { el.style.color = zeroColorGlobal; el.style.fontWeight = "400"; }
+          }
         });
       });
       td.appendChild(sel);
