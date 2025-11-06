@@ -1,10 +1,9 @@
 // app.js
-// Vollständige Datei: ersetzt die alte app.js 1:1
-// Änderungen speziell in dieser Ausgabe:
-// - Bezeichnung "Opponent" → "Gegner" (Default-Namen und UI).
-// - Namensspalte in GoalValue nur so breit wie nötig (minWidth reduziert), aber keine Umbrüche (nowrap) damit Namen nebeneinander stehen.
-// - Werte > 0 in GoalValue (Zellen + berechnete Value-Spalte) werden grün und fett dargestellt.
-// - Restliche Logik (Timer, Marker, Season-Table, Import/Export...) unverändert / erhalten.
+// Vollständige Datei zum 1:1 Ersetzen
+// Änderungen:
+// - "Opponent" → "Gegner" (Defaults, Header-Inputs, Bottom-Label)
+// - GoalValue: Name-Spalte nur so breit wie nötig (nowrap), positive Werte grün + fett
+// - Streifen für Zeilen, Value-Spalte fett; Interaktionen erhalten
 
 document.addEventListener("DOMContentLoaded", () => {
   // --- Elements (buttons remain in DOM per page) ---
@@ -308,7 +307,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   })();
 
-  // CSV helpers
+  // CSV parsing helpers
   function splitCsvLines(text) {
     return text.split(/\r?\n/).map(r => r.trim()).filter(r => r.length > 0);
   }
@@ -327,7 +326,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return Number(str) || 0;
   }
 
-  // import/export functions (unchanged in logic)
+  // Import: Stats CSV (expects export format: ["Nr","Spieler", ...categories, "Time"])
   function importStatsCSVFromText(txt) {
     try {
       const lines = splitCsvLines(txt);
@@ -364,6 +363,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // Import: Season CSV (additive). Adds numeric fields to existing seasonData entries.
+  // 'games' is NOT modified for existing players (preserved). For new players games = 0.
   function importSeasonCSVFromText(txt) {
     try {
       const lines = splitCsvLines(txt);
@@ -383,6 +384,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const idxGoalValue = header.findIndex(h => /goal value/i.test(h) || /gv/i.test(h));
       const idxTime = header.findIndex(h => /time/i.test(h) || /zeit/i.test(h));
 
+      // Helper: parse time "MM:SS" or numeric seconds
       function parseTimeToSecondsLocal(str) {
         if (!str) return 0;
         const s = String(str).trim();
@@ -399,6 +401,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const name = (idxSpieler !== -1) ? (cols[idxSpieler] || "").trim() : "";
         if (!name) continue;
 
+        // Values parsed from CSV (fallback 0)
         const parsed = {
           num: (idxNr !== -1) ? (cols[idxNr] || "") : "",
           goals: (idxGoals !== -1) ? (Number(cols[idxGoals] || 0) || 0) : 0,
@@ -412,7 +415,10 @@ document.addEventListener("DOMContentLoaded", () => {
           goalValue: (idxGoalValue !== -1) ? (Number(cols[idxGoalValue] || 0) || 0) : 0
         };
 
+        // If seasonData already has the player, add numeric fields.
+        // games is NOT modified — it stays as in seasonData.
         if (!seasonData[name]) {
+          // New entry: initialize with parsed values, but games = 0
           seasonData[name] = {
             num: parsed.num || "",
             name: name,
@@ -428,6 +434,7 @@ document.addEventListener("DOMContentLoaded", () => {
             goalValue: parsed.goalValue
           };
         } else {
+          // Existing entry: add numeric values; preserve existing games value
           const existing = seasonData[name];
           existing.num = existing.num || parsed.num || existing.num || "";
           existing.goals = (Number(existing.goals || 0) || 0) + parsed.goals;
@@ -439,6 +446,7 @@ document.addEventListener("DOMContentLoaded", () => {
           existing.faceOffsWon = (Number(existing.faceOffsWon || 0) || 0) + parsed.faceOffsWon;
           existing.timeSeconds = (Number(existing.timeSeconds || 0) || 0) + parsed.timeSeconds;
           existing.goalValue = (Number(existing.goalValue || 0) || 0) + parsed.goalValue;
+          // IMPORTANT: do NOT change existing.games (leave as-is)
         }
       }
 
@@ -452,8 +460,10 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // --- Marker helpers with FIELD image sampling ---
+  const LONG_MARK_MS_INTERNAL = 600;
   const samplerCache = new WeakMap();
   function clampPct(v) { return Math.max(0, Math.min(100, v)); }
+
   function createImageSampler(imgEl) {
     if (!imgEl) return null;
     if (samplerCache.has(imgEl)) return samplerCache.get(imgEl);
@@ -545,14 +555,16 @@ document.addEventListener("DOMContentLoaded", () => {
     container.appendChild(dot);
   }
 
-  // createMarkerBasedOn unchanged
   function createMarkerBasedOn(pos, boxEl, longPress, forceGrey=false) {
     if (!boxEl) return;
 
+    // FIELD BOX
     if (boxEl.classList.contains("field-box")) {
       const img = boxEl.querySelector("img");
       if (img) {
-        if (!pos.insideImage) return;
+        if (!pos.insideImage) {
+          return;
+        }
         const sampler = createImageSampler(img);
         if (longPress || forceGrey) {
           createMarkerPercent(pos.xPctContainer, pos.yPctContainer, "#444", boxEl, true);
@@ -563,22 +575,33 @@ document.addEventListener("DOMContentLoaded", () => {
           const iy = pos.yPctImage;
           const isGreen = sampler.isGreenAt(ix, iy, 110, 30);
           const isRed = sampler.isRedAt(ix, iy, 95, 22);
-          if (isGreen) { createMarkerPercent(pos.xPctContainer, pos.yPctContainer, "#00ff66", boxEl, true); return; }
-          if (isRed) { createMarkerPercent(pos.xPctContainer, pos.yPctContainer, "#ff0000", boxEl, true); return; }
+          if (isGreen) {
+            createMarkerPercent(pos.xPctContainer, pos.yPctContainer, "#00ff66", boxEl, true);
+            return;
+          }
+          if (isRed) {
+            createMarkerPercent(pos.xPctContainer, pos.yPctContainer, "#ff0000", boxEl, true);
+            return;
+          }
           return;
         } else {
           const color = pos.yPctImage > 50 ? "#ff0000" : "#00ff66";
           createMarkerPercent(pos.xPctContainer, pos.yPctContainer, color, boxEl, true);
           return;
         }
-      } else return;
+      } else {
+        return;
+      }
     }
 
+    // GOAL BOXES
     if (boxEl.classList.contains("goal-img-box") || boxEl.id === "goalGreenBox" || boxEl.id === "goalRedBox") {
       const img = boxEl.querySelector("img");
       if (!img) return;
       const sampler = createImageSampler(img);
-      if (!sampler || !sampler.valid) return;
+      if (!sampler || !sampler.valid) {
+        return;
+      }
       if (boxEl.id === "goalGreenBox") {
         const ok = sampler.isWhiteAt(pos.xPctContainer, pos.yPctContainer, 220);
         if (!ok) return;
@@ -784,7 +807,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initTimeTrackingBox(torbildTimeTrackingBox, "timeData", false);
   initTimeTrackingBox(seasonMapTimeTrackingBox, "seasonMapTimeData", true);
 
-  // --- Season Map export/import functions ---
+  // --- Season Map export/import functions (modified export flow) ---
   function readTimeTrackingFromBox(box) {
     const result = {};
     if (!box) return result;
@@ -811,6 +834,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function exportSeasonMapFromTorbild() {
+    // First confirm export
     const proceed = confirm("In Season Map exportieren?");
     if (!proceed) return;
 
@@ -832,13 +856,16 @@ document.addEventListener("DOMContentLoaded", () => {
     const timeData = readTimeTrackingFromBox(torbildTimeTrackingBox);
     localStorage.setItem("seasonMapTimeData", JSON.stringify(timeData));
 
+    // After export, ask whether to keep data in Goal Map
     const keep = confirm("Spiel wurde in Season Map exportiert, Daten in Goal Map beibehalten? (OK = Ja, Abbrechen = Nein)");
     if (!keep) {
+      // remove markers and reset time boxes in Goal Map (torbildPage)
       document.querySelectorAll("#torbildPage .marker-dot").forEach(d => d.remove());
       document.querySelectorAll("#torbildPage .time-btn").forEach(btn => btn.textContent = "0");
       localStorage.removeItem("timeData");
     }
 
+    // navigate to seasonMap
     showPage("seasonMap");
     renderSeasonMapPage();
   }
@@ -984,6 +1011,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
+    // render overlays
     renderGoalAreaStats();
   }
 
@@ -1002,6 +1030,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // Ensure torbild page behavior when opening torbild
   if (torbildBtn) {
     torbildBtn.addEventListener("click", () => {
       showPage("torbild");
@@ -1017,8 +1046,9 @@ document.addEventListener("DOMContentLoaded", () => {
   if (backToStatsFromSeasonMapBtn) backToStatsFromSeasonMapBtn.addEventListener("click", () => showPage("stats"));
   if (document.getElementById("resetSeasonMapBtn")) document.getElementById("resetSeasonMapBtn").addEventListener("click", resetSeasonMap);
 
-  // --- Season export (Stats -> Season) (unchanged) ---
+  // --- Season export (Stats -> Season) (modified flow) ---
   const exportSeasonHandler = () => {
+    // first prompt: ask to export
     const proceed = confirm("Spiel zu Season exportieren?");
     if (!proceed) return;
 
@@ -1027,6 +1057,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    // perform export (accumulate as one game)
     selectedPlayers.forEach(p => {
       const name = p.name;
       const stats = statsData[name] || {};
@@ -1074,8 +1105,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     localStorage.setItem("seasonData", JSON.stringify(seasonData));
 
+    // second prompt: ask whether to keep data in Game Data
     const keep = confirm("Spiel wurde in Season exportiert, Daten in Game Data beibehalten? (OK = Ja, Abbrechen = Nein)");
     if (!keep) {
+      // clear stats + times for exported players (no further confirmations)
       selectedPlayers.forEach(p => {
         const name = p.name;
         if (!statsData[name]) statsData[name] = {};
@@ -1095,7 +1128,7 @@ document.addEventListener("DOMContentLoaded", () => {
     exportSeasonFromStatsBtn.addEventListener("click", exportSeasonHandler);
   }
 
-  // --- Export current game data (stats) to CSV ---
+  // --- Export current game data (stats) to CSV: include totals row + timer ---
   function formatTimeMMSS(sec) {
     const mm = String(Math.floor(sec / 60)).padStart(2, "0");
     const ss = String(sec % 60).padStart(2, "0");
@@ -1111,6 +1144,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const header = ["Nr", "Spieler", ...categories, "Time"];
       const rows = [header];
 
+      // player rows
       selectedPlayers.forEach(p => {
         const name = p.name;
         const row = [];
@@ -1123,6 +1157,7 @@ document.addEventListener("DOMContentLoaded", () => {
         rows.push(row);
       });
 
+      // compute totals (same logic as updateTotals)
       const totals = {};
       categories.forEach(c => totals[c] = 0);
       let totalSeconds = 0;
@@ -1150,6 +1185,7 @@ document.addEventListener("DOMContentLoaded", () => {
       totalRow[header.length - 1] = formatTimeMMSS(totalSeconds);
       rows.push(totalRow);
 
+      // additional row with timer button value
       const timerRow = new Array(header.length).fill("");
       timerRow[1] = "TIMER";
       timerRow[header.length - 1] = formatTimeMMSS(timerSeconds || 0);
@@ -1168,9 +1204,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // Attach export handler to exportBtn (Game Data page)
   document.getElementById("exportBtn")?.addEventListener("click", exportStatsCSV);
 
-  // --- Season table rendering (full) ---
+  // --- Season table rendering (full) with MVP columns moved to end ---
   function parseForSort(val) {
     if (val === null || val === undefined) return "";
     const v = String(val).trim();
@@ -1194,6 +1231,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!container) return;
     container.innerHTML = "";
 
+    // Header order: MVP is right after Time, MVP Points last
     const headerCols = [
       "Nr", "Spieler", "Games",
       "Goals", "Assists", "Points", "+/-", "Ø +/-",
@@ -1293,8 +1331,8 @@ document.addEventListener("DOMContentLoaded", () => {
         faceOffsWon,
         `${faceOffPercent}%`,
         formatTimeMMSS(timeSeconds),
-        "",
-        ""
+        "", // MVP placeholder
+        ""  // MVP Points placeholder
       ];
 
       return {
@@ -1314,8 +1352,8 @@ document.addEventListener("DOMContentLoaded", () => {
     rows.forEach(r => {
       const displayPoints = (typeof r.mvpPointsRounded === "number" && isFinite(r.mvpPointsRounded)) ? Number(r.mvpPointsRounded.toFixed(1)) : "";
       const rank = (typeof r.mvpPointsRounded !== "undefined" && r.mvpPointsRounded !== "" && scoreToRank.hasOwnProperty(r.mvpPointsRounded)) ? scoreToRank[r.mvpPointsRounded] : "";
-      const mvpIdx = headerCols.length - 2;
-      const mvpPointsIdx = headerCols.length - 1;
+      const mvpIdx = headerCols.length - 2; // second last => "MVP"
+      const mvpPointsIdx = headerCols.length - 1; // last => "MVP Points"
       r.cells[mvpIdx] = rank;
       r.cells[mvpPointsIdx] = displayPoints;
     });
@@ -1335,9 +1373,8 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
 
-    displayRows.forEach((r,i) => {
+    displayRows.forEach(r => {
       const tr = document.createElement("tr");
-      tr.classList.add(i % 2 === 0 ? "even-row" : "odd-row");
       r.cells.forEach(c => {
         const td = document.createElement("td");
         td.textContent = c;
@@ -1356,6 +1393,7 @@ document.addEventListener("DOMContentLoaded", () => {
       th.style.padding = "8px";
     });
 
+    // compute and append total/average row
     if (count > 0) {
       const sums = {
         games: 0, goals: 0, assists: 0, points: 0, plusMinus: 0,
@@ -1388,7 +1426,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const avgTimeSeconds = Math.round(sums.timeSeconds / count);
 
       const totalCells = new Array(headerCols.length).fill("");
-      totalCells[1] = "Total Ø";
+      totalCells[1] = "Total Ø"; // "Spieler"
       totalCells[2] = Number((avgGames).toFixed(1));
       totalCells[3] = Number((avgGoals).toFixed(1));
       totalCells[4] = Number((avgAssists).toFixed(1));
@@ -1400,11 +1438,12 @@ document.addEventListener("DOMContentLoaded", () => {
       totalCells[10] = Number((avgGoals / (avgGames || 1)).toFixed(1));
       totalCells[11] = Number((avgPoints / (avgGames || 1)).toFixed(1));
       totalCells[12] = Number((avgPenalty).toFixed(1));
-      totalCells[13] = "";
+      totalCells[13] = ""; // Goal Value left blank
       totalCells[14] = Number((avgFaceOffs).toFixed(1));
       totalCells[15] = Number((avgFaceOffsWon).toFixed(1));
       totalCells[16] = `${avgFaceOffPercent}%`;
       totalCells[17] = formatTimeMMSS(avgTimeSeconds);
+      // MVP & MVP Points left empty
 
       const trTotal = document.createElement("tr");
       trTotal.className = "total-row";
@@ -1465,7 +1504,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // --- Render stats table (full) ---
+  // --- Render stats table (full) with totals styled like season header ---
   function renderStatsTable() {
     if (!statsContainer) return;
     statsContainer.innerHTML = "";
@@ -1870,7 +1909,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const raw = localStorage.getItem("goalValueOpponents");
       if (raw) return JSON.parse(raw);
     } catch (e) {}
-    // default names in German as requested: "Gegner 1", ...
+    // default names in German: "Gegner 1", ...
     const defaults = [];
     for (let i=1;i<=19;i++) defaults.push(`Gegner ${i}`);
     return defaults;
@@ -1951,7 +1990,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return arr;
   }
 
-  // --- Updated: renderGoalValuePage (Gegner labels, name column sizing, positive values green+bold) ---
+  // --- Updated: renderGoalValuePage using click/dblclick/touch for goal cells ---
   function renderGoalValuePage() {
     if (!goalValueContainer) return;
     goalValueContainer.innerHTML = "";
@@ -1969,7 +2008,8 @@ document.addEventListener("DOMContentLoaded", () => {
     table.style.borderCollapse = "collapse";
     table.style.borderRadius = "8px";
     table.style.overflow = "hidden";
-    table.style.tableLayout = "auto"; // allow opponent columns to flow naturally
+    // keep table-layout auto so wide first column can expand as needed
+    table.style.tableLayout = "auto";
 
     const thead = document.createElement("thead");
     const headerRow = document.createElement("tr");
@@ -1978,8 +2018,7 @@ document.addEventListener("DOMContentLoaded", () => {
     thPlayer.style.textAlign = "center";
     thPlayer.style.padding = "8px 6px";
     thPlayer.style.borderBottom = "2px solid #333";
-    // "nur so breit wie nötig, dass die Namen nebeneinander stehen" -> use a modest minWidth and nowrap,
-    // so the column expands only enough for names to not wrap horizontally.
+    // modest minWidth; nowrap on cells prevents wrapping so names remain on one line
     thPlayer.style.minWidth = "160px";
     thPlayer.style.whiteSpace = "nowrap";
     thPlayer.textContent = "Spieler";
@@ -2025,8 +2064,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const negColorGlobal = getComputedStyle(document.documentElement).getPropertyValue('--cell-neg-color')?.trim() || "#ff4c4c";
     const zeroColorGlobal = getComputedStyle(document.documentElement).getPropertyValue('--cell-zero-color')?.trim() || "#ffffff";
 
+    // For each player, render a row. For opponent columns, render clickable cells (increment on click, decrement on dblclick / double-tap)
     playerNames.forEach((name, rowIndex) => {
       const row = document.createElement("tr");
+      // stripe rows same as Game Data / Season
       row.classList.add(rowIndex % 2 === 0 ? "even-row" : "odd-row");
       row.style.borderBottom = "1px solid #333";
 
@@ -2115,6 +2156,7 @@ document.addEventListener("DOMContentLoaded", () => {
           }
         });
 
+        // touch: double-tap detection similar to time buttons
         let lastTap = 0;
         td.addEventListener("touchstart", (e) => {
           const now = Date.now();
@@ -2122,6 +2164,7 @@ document.addEventListener("DOMContentLoaded", () => {
           if (diff < 300) {
             e.preventDefault();
             if (clickTimeout) { clearTimeout(clickTimeout); clickTimeout = null; }
+            // double-tap -> decrement
             const all = getGoalValueData();
             if (!all[name]) all[name] = opponents.map(()=>0);
             all[name][idx] = Math.max(0, (Number(all[name][idx]||0) - 1));
@@ -2145,6 +2188,7 @@ document.addEventListener("DOMContentLoaded", () => {
             lastTap = now;
             setTimeout(() => {
               if (lastTap !== 0) {
+                // single tap -> increment
                 const all = getGoalValueData();
                 if (!all[name]) all[name] = opponents.map(()=>0);
                 all[name][idx] = Math.max(0, (Number(all[name][idx]||0) + 1));
@@ -2156,7 +2200,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 else { td.style.color = zeroColorGlobal; td.style.fontWeight = "400"; }
 
                 const valCell = valueCellMap[name];
-                if (valCell) {
+                if (valCell) { 
                   const comp = computeValueForPlayer(name);
                   valCell.textContent = formatValueNumber(comp);
                   if (comp > 0) { valCell.style.color = posColorGlobal; valCell.style.fontWeight = "700"; }
@@ -2175,6 +2219,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const tdValue = document.createElement("td");
       tdValue.style.padding = "6px";
       tdValue.style.textAlign = "center";
+      // Make computed value bold per user's request (totalwerte in der Value-Spalte sollen fett sein)
       const computed = computeValueForPlayer(name);
       tdValue.textContent = formatValueNumber(computed);
       if (computed > 0) { tdValue.style.color = posColorGlobal; tdValue.style.fontWeight = "700"; }
@@ -2186,7 +2231,7 @@ document.addEventListener("DOMContentLoaded", () => {
       tbody.appendChild(row);
     });
 
-    // bottom row: weights (selects)
+    // bottom row: keep selects for scale (user can still edit weights)
     const bottomRow = document.createElement("tr");
     bottomRow.classList.add(playerNames.length % 2 === 0 ? "even-row" : "odd-row");
     bottomRow.style.background = "rgba(0,0,0,0.03)";
@@ -2225,7 +2270,7 @@ document.addEventListener("DOMContentLoaded", () => {
         setGoalValueBottom(arr);
         Object.keys(valueCellMap).forEach(playerName => {
           const el = valueCellMap[playerName];
-          if (el) {
+          if (el) { 
             const comp = computeValueForPlayer(playerName);
             el.textContent = formatValueNumber(comp);
             if (comp > 0) { el.style.color = posColorGlobal; el.style.fontWeight = "700"; }
