@@ -1,19 +1,30 @@
-# .github/workflows/pages-deploy.yml
-# Deploys repository root to GitHub Pages on push to main
-# Requires no additional secrets for standard Pages deploy
+# Deploys repository root to GitHub Pages on push to main (mit manueller Ausführung)
+# - Fügt permissions hinzu, damit der Deploy-Action arbeiten kann
+# - Ermöglicht manuelles Auslösen (workflow_dispatch) für Tests
+name: Deploy to GitHub Pages
+
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Upload artifact for GitHub Pages
         uses: actions/upload-pages-artifact@v1
         with:
-          path: '.'        # deploy repo root; adjust to './docs' if you use /docs
+          path: '.'        # deploy repo root; wenn du /docs verwenden willst: setze './docs'
+
       - name: Deploy to GitHub Pages
         uses: actions/deploy-pages@v1
