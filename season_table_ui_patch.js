@@ -1,424 +1,334 @@
 // season_table_ui_patch.js
-//  - verschiebt 'MVP Points' und 'MVP' Spalten ans Ende der Season-Tabelle (MVP als letzte Spalte)
-//  - sorgt dafür, dass Goal-Value-Tabellen gestreift sind und per click/dblclick editierbar sind
-//  - integriert Änderungen zurück in vorhandene <select> (dispatches 'change')
-//  - Fügt behavior per DOMContentLoaded hinzu; kann auch manuell durch Aufruf initSeasonTableUI() angestoßen werden
-
+// - Verschiebt "MVP Points" und "MVP" ans Ende der Season-Tabelle (MVP zuletzt).
+// - Macht die Goal Value Tabelle gestreift wie andere Tabellen.
+// - Entfernt dropdown-only Eingaben: Klick = +1 (cycle bei bottom scale), Doppelklick = Inline-Number-Editor.
+// - Schreibt Änderungen zurück in vorhandene app-Helper (getGoalValueData / setGoalValueData / getGoalValueBottom / setGoalValueBottom).
+// - Läuft nach DOMContentLoaded und reagiert auf Neurendering (MutationObserver).
 (function () {
   'use strict';
 
-  // --- Konfiguration: passe Selektoren an deine App falls nötig ---
-  const seasonTableSelectors = [
-    '#seasonTable',       // mögliche id
-    '.season-table',      // mögliche klasse
-    'table.season',       // generisch
-    'table[data-role="season-table"]',
-    'table'               // fallback: erste table auf Seite (Vorsicht)
-  ];
-
-  // Goal value tables: ermittelt Tabellen, die <select> mit goal-Optionen enthalten
-  const goalValueTableSelectors = [
-    '#goalValues',        // falls id
-    '.goal-values',       // falls klasse
-    'table[data-role="goal-values"]',
-    'table'               // fallback: wir filtern später nach select-Inhalt
-  ];
-
-  // Header-Namen zum Suchen (groß/kleinschreibung ignoriert)
-  const MVP_POINTS_HEADER = 'mvp points';
-  const MVP_HEADER = 'mvp';
-
-  // --- Hilfsfunktionen ---
-  function findElement(selectors) {
-    for (const sel of selectors) {
-      try {
-        const el = document.querySelector(sel);
-        if (el) return el;
-      } catch (e) { continue; }
+  // helpers to safely call app functions (fallback to localStorage)
+  function safeGetGoalValueData() {
+    if (typeof window.getGoalValueData === 'function') return window.getGoalValueData();
+    try { return JSON.parse(localStorage.getItem('goalValueData') || '{}'); } catch(e){ return {}; }
+  }
+  function safeSetGoalValueData(obj) {
+    if (typeof window.setGoalValueData === 'function') { window.setGoalValueData(obj); return; }
+    try { localStorage.setItem('goalValueData', JSON.stringify(obj)); } catch(e) {}
+  }
+  function safeGetGoalValueBottom() {
+    if (typeof window.getGoalValueBottom === 'function') return window.getGoalValueBottom();
+    try { return JSON.parse(localStorage.getItem('goalValueBottom') || '[]'); } catch(e){ return []; }
+  }
+  function safeSetGoalValueBottom(arr) {
+    if (typeof window.setGoalValueBottom === 'function') { window.setGoalValueBottom(arr); return; }
+    try { localStorage.setItem('goalValueBottom', JSON.stringify(arr)); } catch(e) {}
+  }
+  function safeComputeValueForPlayer(name) {
+    if (typeof window.computeValueForPlayer === 'function') return window.computeValueForPlayer(name);
+    const data = safeGetGoalValueData(); const bottom = safeGetGoalValueBottom();
+    const vals = (data[name] && Array.isArray(data[name])) ? data[name] : [];
+    let sum = 0;
+    for (let i = 0; i < bottom.length; i++) {
+      sum += (Number(vals[i] || 0) || 0) * (Number(bottom[i] || 0) || 0);
     }
-    return null;
+    return sum;
   }
 
-  function findAllTables() {
-    return Array.from(document.querySelectorAll('table'));
-  }
-
-  function textTrimLower(el) {
-    return (el && el.textContent || '').trim().toLowerCase();
-  }
-
-  // Verschiebe Spalte mit headerText (case-insensitive) ans Ende; wirkt auf header row + alle tbody/tr
-  function moveColumnToEnd(table, headerTextsInOrder) {
+  // Move columns MVP Points & MVP to the end (MVP last)
+  function moveSeasonColumnsToEnd() {
+    const container = document.getElementById('seasonContainer');
+    if (!container) return;
+    const table = container.querySelector('table.stats-table');
+    if (!table) return;
     const thead = table.tHead;
     if (!thead) return;
     const headerRow = thead.rows[0];
-    if (!headerRow) return;
+    const headerTextArray = Array.from(headerRow.cells).map(h => (h.textContent||'').trim().toLowerCase());
 
-    // Build header cell index map
-    const headers = Array.from(headerRow.cells);
-    // find indices for each desired header (match by headerTextsInOrder sequentially)
-    const indices = [];
-    for (const headerText of headerTextsInOrder) {
-      let idx = -1;
-      for (let i = 0; i < headers.length; i++) {
-        if (textTrimLower(headers[i]) === headerText.toLowerCase()) { idx = i; break; }
-      }
-      if (idx >= 0) indices.push(idx);
-      else {
-        // try partial match (header contains)
-        for (let i = 0; i < headers.length; i++) {
-          if (textTrimLower(headers[i]).includes(headerText.toLowerCase())) { idx = i; break; }
-        }
-        if (idx >= 0) indices.push(idx);
-      }
-    }
+    // find indices by matching substrings
+    const findIndex = (token) => {
+      token = token.toLowerCase();
+      let idx = headerTextArray.indexOf(token);
+      if (idx !== -1) return idx;
+      idx = headerTextArray.findIndex(h => h.includes(token));
+      return idx;
+    };
 
-    // If none found -> try more relaxed matching
-    if (!indices.length) return;
+    const idxMvpPoints = findIndex('mvp points');
+    const idxMvp = findIndex('mvp');
 
-    // We will move columns in the order given so final order is preserved (first move MVP Points, then MVP)
-    // Because moving changes indices, compute by header element reference rather than index.
-    for (const headerText of headerTextsInOrder) {
-      // find header cell element by matching text
-      const hdrCell = headers.find(h => textTrimLower(h).includes(headerText.toLowerCase()));
-      if (!hdrCell) continue;
-      // append header cell to end of header row
-      headerRow.appendChild(hdrCell);
+    // Move by header cell element (handles shifting indices)
+    const moveHeaderToEnd = (token) => {
+      const th = Array.from(headerRow.cells).find(h => (h.textContent||'').toLowerCase().includes(token.toLowerCase()));
+      if (!th) return;
+      headerRow.appendChild(th);
+    };
 
-      // compute the index of the moved column in original rows (we can detect by matching data-col attribute if present;
-      // fallback: use cell position in the header row's current children lengths minus 1 = new index; but simpler:
-      // we will find the cell in each body row with a matching data-col or by position of original header index - however DOM mutation changed header positions
-      // so we use a robust method: detect original header text content to identify the column's position in the old header list.
-    }
+    // If both present, move MVP Points first, then MVP
+    if (idxMvpPoints !== -1) moveHeaderToEnd('mvp points');
+    if (idxMvp !== -1) moveHeaderToEnd('mvp');
 
-    // After reordering header cells, reconstruct a mapping from header text -> new header order
-    const newHeaders = Array.from(headerRow.cells);
-    const headerTexts = newHeaders.map(h => textTrimLower(h));
-
-    // Now re-order body cells row-by-row so that columns align with headerRow order
+    // Now fix every tbody row by moving the corresponding td identified by original snapshot
     const tbody = table.tBodies[0];
     if (!tbody) return;
-    for (const row of Array.from(tbody.rows)) {
-      // Build a map of headerText -> cell (try data-col or aria-label or title, else fallback to index mapping)
-      const cellMap = {};
-      // If cells have data attributes mapping to header, use them
-      Array.from(row.cells).forEach((cell, i) => {
-        const tag = (cell.getAttribute('data-col') || cell.getAttribute('aria-label') || cell.getAttribute('title') || '').trim().toLowerCase();
-        if (tag) cellMap[tag] = cell;
-        else {
-          // fallback: assign by position to an 'index-N' placeholder
-          cellMap[`index-${i}`] = cell;
-        }
-      });
 
-      // If the number of cells equals number of headers we can re-order by index mapping
-      if (row.cells.length === newHeaders.length) {
-        // simple move: append each cell in the header order by taking current cells by index
-        // (we assume header order corresponds to desired column order already)
-        const curCells = Array.from(row.cells);
-        for (let i = 0; i < newHeaders.length; i++) {
-          // append the cell matching original header position i
-          // If existing number of cells equals headers, just append in current order adjusted by header repositioning
-          row.appendChild(curCells[i]);
-        }
-      } else {
-        // fallback: do nothing; difficult to reliably remap if column counts differ
+    // create snapshot of original header texts (before moves) to identify which column to move per row
+    // We'll attempt to detect moved header via matching text in the pre-move snapshot; if snapshot isn't available, fallback by counting columns
+    const snapshot = headerTextArray.slice();
+
+    const moveColumnByHeaderText = (token) => {
+      token = token.toLowerCase();
+      // find original index in snapshot
+      let origIdx = snapshot.findIndex(h => h.includes(token));
+      // if not found, try current header index (last occurrence)
+      if (origIdx === -1) {
+        const curIdx = Array.from(headerRow.cells).findIndex(h => (h.textContent||'').toLowerCase().includes(token));
+        if (curIdx !== -1) origIdx = curIdx;
       }
-    }
-  }
-
-  // Simpler robust approach: identify header index of MVP Points and MVP (using original header row), then for each row move the TD at that index to end.
-  function moveColumnsByText(table, headerTextsInOrder) {
-    const thead = table.tHead;
-    if (!thead) return;
-    const headerRow = thead.rows[0];
-    if (!headerRow) return;
-
-    // snapshot of header text at start
-    const headerCells = Array.from(headerRow.cells);
-    const headerTexts = headerCells.map(h => textTrimLower(h));
-
-    // find indices
-    const indices = [];
-    for (const headerText of headerTextsInOrder) {
-      let idx = headerTexts.indexOf(headerText.toLowerCase());
-      if (idx === -1) {
-        // try contains
-        idx = headerTexts.findIndex(ht => ht.includes(headerText.toLowerCase()));
-      }
-      if (idx >= 0) indices.push(idx);
-    }
-    if (!indices.length) return;
-
-    // For each index (in ascending order), move the header cell and move each row's cell at that index to the end.
-    // Important: when we move a earlier index to the end, indices of subsequent columns shift left by 1.
-    indices.forEach((origIndex, shiftCount) => {
-      // compute current index considering previous moves: if we've moved k columns already and the origIndex > movedIndex then index decreases by number of moved columns left of it
-      // Simpler: always search header cell by matching header text (more robust)
-      const headerText = headerTextsInOrder[shiftCount].toLowerCase();
-      // find header cell element dynamically
-      const hdr = Array.from(headerRow.cells).find(h => textTrimLower(h).includes(headerText));
-      if (!hdr) return;
-      headerRow.appendChild(hdr); // move header to end
-
-      // determine original index by comparing with snapshot headerCells: find index in snapshot whose text contains headerText
-      let snapIdx = headerCells.findIndex(h => textTrimLower(h).includes(headerText));
-      if (snapIdx === -1) {
-        // fallback: try current index of moved header among headerRow.children (last)
-        snapIdx = headerRow.cells.length - 1;
-      }
-
-      // For each body row, move the corresponding cell (use snapIdx or best-effort)
-      const tbody = table.tBodies[0];
-      if (!tbody) return;
-      for (const row of Array.from(tbody.rows)) {
-        // if row has cell at snapIdx, append it to the row (move to end)
-        if (row.cells.length > snapIdx) {
-          row.appendChild(row.cells[snapIdx]);
+      if (origIdx === -1) return;
+      // For each row, if it has a cell at origIdx, append it (move to end)
+      Array.from(tbody.rows).forEach(row => {
+        if (row.cells.length > origIdx) {
+          row.appendChild(row.cells[origIdx]);
         } else {
-          // fallback: try to find a cell with attribute/data mapping to header text
+          // best-effort: try to find by aria-label / data-col
           const candidate = Array.from(row.cells).find(c => {
-            const meta = (c.getAttribute('data-col') || c.getAttribute('aria-label') || c.getAttribute('title') || '').toLowerCase();
-            return meta && meta.includes(headerText);
+            const meta = (c.getAttribute('data-col')||c.getAttribute('aria-label')||'').toLowerCase();
+            return meta && meta.includes(token);
           });
           if (candidate) row.appendChild(candidate);
         }
-      }
-    });
+      });
+    };
+
+    if (idxMvpPoints !== -1) moveColumnByHeaderText('mvp points');
+    if (idxMvp !== -1) moveColumnByHeaderText('mvp');
   }
 
-  // Find all goal-value tables heuristically: table containing at least one <select> with numeric options
-  function findGoalValueTables() {
-    const tables = findAllTables();
-    return tables.filter(tbl => {
-      const selects = tbl.querySelectorAll('select');
-      if (!selects.length) return false;
-      // check if at least one select option value looks numeric (or small ints)
-      for (const s of selects) {
-        const opts = Array.from(s.options).map(o => o.value.trim());
-        if (opts.some(v => /^-?\d+$/.test(v))) return true;
-      }
-      return false;
-    });
-  }
+  // Enhance Goal Value table: striped rows + click/dblclick editing
+  function enhanceGoalValueTable() {
+    const container = document.getElementById('goalValueContainer');
+    if (!container) return;
+    const table = container.querySelector('table.goalvalue-table');
+    if (!table) return;
 
-  // Apply striped styling class for goal tables (adds .goal-value-table class)
-  function styleGoalTables() {
-    const goalTables = findGoalValueTables();
-    for (const t of goalTables) {
-      t.classList.add('goal-value-table');
-      // also add a class for editable cells (used by event delegation)
-      t.querySelectorAll('td').forEach(td => td.classList.add('goal-value-cell'));
+    // Add a class for CSS styling if not present
+    table.classList.add('goal-value-table');
+    // Apply alternating row classes for existing rows
+    Array.from(table.tBodies[0].rows).forEach((row, i) => {
+      row.classList.remove('odd-row','even-row');
+      row.classList.add((i % 2 === 0) ? 'even-row' : 'odd-row');
+    });
+
+    // Determine columns: first col is player, last col is computed value, opponent columns are middle
+    const thead = table.tHead;
+    const headerCells = thead ? Array.from(thead.rows[0].cells) : [];
+    const oppCount = Math.max(0, headerCells.length - 2); // subtract Spieler + Value
+
+    // player rows -> for each opponent cell: replace input (if any) with span and attach click/dblclick
+    const tbody = table.tBodies[0];
+    if (!tbody) return;
+
+    // bottom (scale) row is the last row in tbody (app.js renders bottomRow appended last)
+    const rows = Array.from(tbody.rows);
+    if (rows.length === 0) return;
+    const bottomRow = rows[rows.length - 1];
+
+    // create goalValueOptions from existing selects if present (fallback to 0..5 step 0.5)
+    let goalValueOptions = [];
+    // try to read from bottomRow selects
+    const selectsInBottom = Array.from(bottomRow.querySelectorAll('select'));
+    if (selectsInBottom.length) {
+      goalValueOptions = Array.from(selectsInBottom[0].options).map(o => o.value);
+    } else {
+      for (let v = 0; v <= 10; v++) goalValueOptions.push((v*0.5).toFixed(1));
     }
-  }
 
-  // Attach click/dblclick handlers to goal tables to allow click/dblclick editing
-  function enableGoalValueClickEdit() {
-    const goalTables = findGoalValueTables();
-    for (const table of goalTables) {
-      // delegate events from table
-      table.addEventListener('click', (ev) => {
-        const td = ev.target.closest('td');
-        if (!td || !table.contains(td)) return;
-        // find select inside cell
-        const sel = td.querySelector('select');
-        // also support direct numeric spans
-        if (sel) {
-          cycleSelectValue(sel);
-          // update visible UI (if there is a span representation)
-          updateDisplaySpanForSelect(sel);
-        } else {
-          // if no select, but cell contains numeric text, increment by 1 on click
-          const num = parseInt(td.textContent.trim());
-          if (!Number.isNaN(num)) {
-            const newVal = num + 1;
-            setCellNumericValue(td, newVal);
-          }
-        }
+    // Helper to update computed value cell for a player
+    const updateComputedCell = (playerName, cellEl) => {
+      const val = safeComputeValueForPlayer(playerName);
+      if (cellEl) cellEl.textContent = (Math.abs(val - Math.round(val)) < 0.0001) ? String(Math.round(val)) : String(Number(val.toFixed(1)));
+    };
+
+    // For each player row (all except bottomRow)
+    rows.slice(0, rows.length - 1).forEach(row => {
+      const nameCell = row.cells[0];
+      const playerName = (nameCell && nameCell.textContent) ? nameCell.textContent.trim() : '';
+      // opponent columns cells are 1..(oppCount)
+      for (let ci = 1; ci <= oppCount; ci++) {
+        const td = row.cells[ci];
+        if (!td) continue;
+        // If cell contains an <input>, replace with a span that displays the value
+        const input = td.querySelector('input');
+        const curVal = input ? (input.value || '0') : (td.textContent || '0');
+        td.innerHTML = ''; // clear
+        const span = document.createElement('span');
+        span.className = 'gv-cell';
+        span.style.display = 'inline-block';
+        span.style.minWidth = '56px';
+        span.style.textAlign = 'center';
+        span.textContent = String(curVal);
+        td.appendChild(span);
+
+        // click => increment by 1 (and save)
+        span.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          let v = Number(span.textContent) || 0;
+          v = v + 1;
+          span.textContent = String(v);
+          // update storage
+          const all = safeGetGoalValueData();
+          if (!all[playerName]) all[playerName] = Array(oppCount).fill(0);
+          all[playerName][ci - 1] = v;
+          safeSetGoalValueData(all);
+          // update computed value
+          const computedCell = row.cells[row.cells.length - 1];
+          updateComputedCell(playerName, computedCell);
+        });
+
+        // dblclick => open inline number editor
+        span.addEventListener('dblclick', (ev) => {
+          ev.preventDefault();
+          if (td.querySelector('input.inline-editor')) return;
+          const cur = span.textContent || '0';
+          const inp = document.createElement('input');
+          inp.type = 'number';
+          inp.className = 'inline-editor';
+          inp.value = String(cur);
+          inp.style.minWidth = '56px';
+          td.innerHTML = '';
+          td.appendChild(inp);
+          inp.focus(); inp.select();
+          const commit = () => {
+            let nv = inp.value || '0';
+            nv = Number(nv) || 0;
+            span.textContent = String(nv);
+            td.innerHTML = '';
+            td.appendChild(span);
+            const all = safeGetGoalValueData();
+            if (!all[playerName]) all[playerName] = Array(oppCount).fill(0);
+            all[playerName][ci - 1] = nv;
+            safeSetGoalValueData(all);
+            const computedCell = row.cells[row.cells.length - 1];
+            updateComputedCell(playerName, computedCell);
+          };
+          const cancel = () => { td.innerHTML = ''; td.appendChild(span); };
+          inp.addEventListener('blur', commit);
+          inp.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { commit(); }
+            else if (e.key === 'Escape') { cancel(); }
+          });
+        });
+      }
+    });
+
+    // Replace bottomRow select elements with clickable spans (for scale)
+    // bottomRow cells: first cell is label, middle cells are selects, last cell empty
+    const bottomCells = Array.from(bottomRow.cells);
+    bottomCells.forEach((td, idx) => {
+      // skip first label cell and last value cell
+      if (idx === 0 || idx === bottomCells.length - 1) return;
+      const sel = td.querySelector('select');
+      const curVal = sel ? (sel.value || goalValueOptions[0]) : (td.textContent || goalValueOptions[0]);
+      td.innerHTML = '';
+      const span = document.createElement('span');
+      span.className = 'gv-scale';
+      span.style.display = 'inline-block';
+      span.style.minWidth = '56px';
+      span.style.textAlign = 'center';
+      span.style.fontWeight = '700';
+      span.textContent = String(curVal);
+      td.appendChild(span);
+
+      // click: cycle through goalValueOptions
+      span.addEventListener('click', () => {
+        let i = goalValueOptions.indexOf(String(span.textContent));
+        if (i === -1) i = 0;
+        i = (i + 1) % goalValueOptions.length;
+        const nv = goalValueOptions[i];
+        span.textContent = nv;
+        // persist in storage bottom array at position (idx-1)
+        const bottom = safeGetGoalValueBottom();
+        while (bottom.length < oppCount) bottom.push(0);
+        bottom[idx - 1] = Number(nv);
+        safeSetGoalValueBottom(bottom);
+        // update all computed cells
+        rows.slice(0, rows.length - 1).forEach(r => {
+          const pname = (r.cells[0] && r.cells[0].textContent) ? r.cells[0].textContent.trim() : '';
+          const computedCell = r.cells[r.cells.length - 1];
+          updateComputedCell(pname, computedCell);
+        });
       });
 
-      table.addEventListener('dblclick', (ev) => {
-        const td = ev.target.closest('td');
-        if (!td || !table.contains(td)) return;
+      // dblclick: inline number editor for precise set
+      span.addEventListener('dblclick', (ev) => {
         ev.preventDefault();
-        // find select inside cell
-        const sel = td.querySelector('select');
-        openInlineNumberEditor(td, sel);
+        if (td.querySelector('input.inline-editor')) return;
+        const cur = span.textContent || '0';
+        const inp = document.createElement('input');
+        inp.type = 'number';
+        inp.className = 'inline-editor';
+        inp.value = String(cur);
+        inp.style.minWidth = '56px';
+        td.innerHTML = '';
+        td.appendChild(inp);
+        inp.focus(); inp.select();
+        const commit = () => {
+          const nv = Number(inp.value) || 0;
+          td.innerHTML = '';
+          span.textContent = String(nv);
+          td.appendChild(span);
+          const bottom = safeGetGoalValueBottom();
+          while (bottom.length < oppCount) bottom.push(0);
+          bottom[idx - 1] = nv;
+          safeSetGoalValueBottom(bottom);
+          rows.slice(0, rows.length - 1).forEach(r => {
+            const pname = (r.cells[0] && r.cells[0].textContent) ? r.cells[0].textContent.trim() : '';
+            const computedCell = r.cells[r.cells.length - 1];
+            updateComputedCell(pname, computedCell);
+          });
+        };
+        const cancel = () => { td.innerHTML = ''; td.appendChild(span); };
+        inp.addEventListener('blur', commit);
+        inp.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') commit();
+          else if (e.key === 'Escape') cancel();
+        });
       });
-    }
-  }
+    });
 
-  // cycle select to next option (wrap-around) and dispatch change
-  function cycleSelectValue(selectEl) {
-    try {
-      const opts = Array.from(selectEl.options);
-      if (!opts.length) return;
-      const curIndex = selectEl.selectedIndex;
-      const nextIndex = (curIndex + 1) % opts.length;
-      selectEl.selectedIndex = nextIndex;
-      // dispatch change
-      selectEl.dispatchEvent(new Event('change', { bubbles: true }));
-    } catch (e) {
-      console.warn('cycleSelectValue error', e);
-    }
-  }
-
-  // Update a possible visible span representation next to select (if you choose to show)
-  function updateDisplaySpanForSelect(selectEl) {
-    // If there's a sibling .goal-display span, update its text
-    const td = selectEl.closest('td');
-    if (!td) return;
-    const span = td.querySelector('.goal-display');
-    if (span) span.textContent = selectEl.value;
-  }
-
-  // inline numeric editor (dblclick) - creates <input type=number>, writes back to select or cell on blur/enter
-  function openInlineNumberEditor(td, selectEl) {
-    // avoid opening multiple editors
-    if (td.querySelector('input.goal-inline-editor')) return;
-
-    const currentVal = selectEl ? selectEl.value : td.textContent.trim();
-    const input = document.createElement('input');
-    input.type = 'number';
-    input.className = 'goal-inline-editor';
-    input.value = String(currentVal || 0);
-    input.style.minWidth = '40px';
-    input.style.fontSize = '13px';
-    input.style.boxSizing = 'border-box';
-
-    // hide select (but keep it to update)
-    if (selectEl) selectEl.style.display = 'none';
-
-    // clear cell content visually and add input
-    // but preserve also any other UI if necessary
-    if (!selectEl) {
-      // when no select, hide existing content
-      td._oldText = td.textContent;
-      td.textContent = '';
-    }
-    td.appendChild(input);
-    input.focus();
-    input.select();
-
-    function commit() {
-      let newVal = input.value;
-      if (newVal === '') newVal = '0';
-      // if select exists and has matching option, set it; else add or set select.value
-      if (selectEl) {
-        // try to set exact match; if no match add new option (so value persists)
-        const matchOpt = Array.from(selectEl.options).find(o => o.value === String(newVal));
-        if (matchOpt) {
-          selectEl.value = String(newVal);
-        } else {
-          // add option
-          const opt = document.createElement('option');
-          opt.value = String(newVal);
-          opt.text = String(newVal);
-          selectEl.add(opt);
-          selectEl.value = String(newVal);
-        }
-        selectEl.style.display = '';
-        selectEl.dispatchEvent(new Event('change', { bubbles: true }));
-        // update any display span
-        updateDisplaySpanForSelect(selectEl);
-      } else {
-        // write back into td
-        td.textContent = String(newVal);
-      }
-      // cleanup
-      input.remove();
-    }
-
-    function cancel() {
-      if (selectEl) selectEl.style.display = '';
-      else if (td._oldText) td.textContent = td._oldText;
-      input.remove();
-    }
-
-    input.addEventListener('blur', () => commit());
-    input.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter') {
-        ev.preventDefault();
-        commit();
-      } else if (ev.key === 'Escape') {
-        ev.preventDefault();
-        cancel();
-      }
+    // ensure the computed value cells refresh visually right now
+    rows.slice(0, rows.length - 1).forEach(r => {
+      const pname = (r.cells[0] && r.cells[0].textContent) ? r.cells[0].textContent.trim() : '';
+      const computedCell = r.cells[r.cells.length - 1];
+      updateComputedCell(pname, computedCell);
     });
   }
 
-  // if cell has only numeric text and we want to set via click increment
-  function setCellNumericValue(td, newVal) {
-    // If there's a select near by in DOM model, try to find and set it
-    const selectEl = td.querySelector('select') || td.closest('tr')?.querySelector('select');
-    if (selectEl) {
-      // try to select matching option or add one
-      const matchOpt = Array.from(selectEl.options).find(o => o.value === String(newVal));
-      if (matchOpt) {
-        selectEl.value = String(newVal);
-      } else {
-        const opt = document.createElement('option');
-        opt.value = String(newVal);
-        opt.text = String(newVal);
-        selectEl.add(opt);
-        selectEl.value = String(newVal);
-      }
-      selectEl.dispatchEvent(new Event('change', { bubbles: true }));
-      updateDisplaySpanForSelect(selectEl);
-    } else {
-      td.textContent = String(newVal);
-    }
+  // Observe mutations: when season table or goalValue table are (re)rendered, apply fixes
+  function setupObservers() {
+    const root = document.body;
+    const mo = new MutationObserver((mutations) => {
+      // small debounce
+      if (setupObservers._timer) clearTimeout(setupObservers._timer);
+      setupObservers._timer = setTimeout(() => {
+        moveSeasonColumnsToEnd();
+        enhanceGoalValueTable();
+      }, 120);
+    });
+    mo.observe(root, { childList: true, subtree: true, attributes: false });
+    // ensure initial run
+    setTimeout(() => { moveSeasonColumnsToEnd(); enhanceGoalValueTable(); }, 200);
   }
 
-  // Initialize: move MVP columns then style goal tables and enable click/dblclick editing
-  function initSeasonTableUI() {
-    // find season table
-    let table = null;
-    for (const sel of seasonTableSelectors) {
-      try {
-        const t = document.querySelector(sel);
-        if (t && t.tagName && t.tagName.toLowerCase() === 'table') { table = t; break; }
-      } catch (e) {}
-    }
-    if (!table) {
-      // fallback: try to heuristically find table that has headers containing 'season' or 'team' and 'mvp'
-      const allTables = findAllTables();
-      for (const t of allTables) {
-        const th = t.tHead && t.tHead.rows[0];
-        if (!th) continue;
-        const headerText = Array.from(th.cells).map(c => textTrimLower(c)).join(' ');
-        if (headerText.includes('mvp') || headerText.includes('season')) { table = t; break; }
-      }
-    }
-
-    if (table) {
-      try {
-        // move "MVP Points" then "MVP" (so MVP is last)
-        moveColumnsByText(table, ['MVP Points', 'MVP']);
-      } catch (e) {
-        console.warn('moveColumnsByText failed', e);
-      }
-    } else {
-      console.warn('season table not found by selectors; skip column move');
-    }
-
-    try {
-      styleGoalTables();
-      enableGoalValueClickEdit();
-    } catch (e) {
-      console.warn('goal table styling/handlers failed', e);
-    }
-  }
-
-  // auto init after DOM ready
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initSeasonTableUI);
+    document.addEventListener('DOMContentLoaded', setupObservers);
   } else {
-    setTimeout(initSeasonTableUI, 40);
+    setupObservers();
   }
 
-  // expose for manual use
-  window.initSeasonTableUI = initSeasonTableUI;
-  window._seasonTableMoveCols = moveColumnsByText;
-  window._seasonGoalEnableEdit = enableGoalValueClickEdit;
+  // expose manual API
+  window._seasonTablePatch_moveCols = moveSeasonColumnsToEnd;
+  window._seasonTablePatch_enhanceGoalValue = enhanceGoalValueTable;
 })();
