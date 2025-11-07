@@ -7,6 +7,7 @@
 // - PDF-Export: Marker-Positionen in Goal-Boxen werden jetzt auf Grundlage der tatsächlichen
 //   Bild-Render-Position im DOM berechnet, um vertikale/ horizontale Verschiebungen zu vermeiden.
 // - Diverse Fallbacks und defensive Prüfungen ergänzt.
+// - Fix: entfernte doppelte Declaration von `momentumEl`, um SyntaxError zu vermeiden.
 
 document.addEventListener("DOMContentLoaded", () => {
   // --- Elements (buttons remain in DOM per page) ---
@@ -981,9 +982,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (rawTime) timeData = JSON.parse(rawTime);
       } catch (e) { timeData = {}; }
 
-      // Try to find momentum DOM element (to "übernehmen" in PDF)
-      const momentumEl = document.querySelector('#momentumTable, .momentum-table, #seasonMapMomentum, .season-map-momentum');
-
+      // Try to find momentum DOM element (to "übernehmen" in PDF) — only checked later after drawing
       const drawTasks = (boxesDom.slice(0, destRects.length)).map(async (boxEl, idx) => {
         const imgEl = boxEl.querySelector('img');
         const dest = destRects[idx];
@@ -1074,7 +1073,7 @@ document.addEventListener("DOMContentLoaded", () => {
       await Promise.all(drawTasks);
 
       // Render Momentum table (falls vorhanden) oder TimeData (Fallback)
-      // Suche typische Momentum-Elemente im DOM
+      // Suche typische Momentum-Elemente im DOM (erst jetzt)
       const momentumEl = document.querySelector('#momentumTable, .momentum-table, #seasonMapMomentum, .season-map-momentum');
       const labelX = MARGIN;
       let labelY = CANVAS_H - MARGIN - 140;
@@ -2746,22 +2745,3 @@ document.addEventListener("DOMContentLoaded", () => {
   if (lastPage === "stats") {
     showPageRef("stats");
     renderStatsTable();
-    updateIceTimeColors();
-  } else if (lastPage === "season") {
-    showPageRef("season");
-    renderSeasonTable();
-  } else if (lastPage === "seasonMap") {
-    showPageRef("seasonMap");
-    renderSeasonMapPage();
-  } else if (lastPage === "goalValue") {
-    showPageRef("goalValue");
-    renderGoalValuePage();
-  } else {
-    showPageRef("selection");
-  }
-
-  // initial timer display
-  updateTimerDisplay();
-
-  // Save to localStorage on unload
-  window.addEvent
