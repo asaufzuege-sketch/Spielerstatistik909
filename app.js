@@ -6,6 +6,7 @@
 // - Streifen für Zeilen, Value-Spalte fett; Interaktionen erhalten
 // - Neu: Export-Button auf Season Map Seite -> exportiert seasonMapMarkers + seasonMapTimeData als JSON oder als PDF (jsPDF)
 // - Fix: Back-Button-Delegation wird jetzt korrekt direkt beim Laden registriert (nicht innerhalb beforeunload)
+// - Fix: Fehlende Navigation-Handler (Goal Map, Season Map) und Season CSV Export hinzugefügt
 
 document.addEventListener("DOMContentLoaded", () => {
   // --- Elements (buttons remain in DOM per page) ---
@@ -133,7 +134,7 @@ document.addEventListener("DOMContentLoaded", () => {
           numAreaHtml = `<div class="num" style="flex:0 0 48px;text-align:center;"><strong>${escapeHtml(p.num)}</strong></div>`;
         } else {
           numAreaHtml = `<div style="flex:0 0 64px;text-align:center;">
-                           <input class="num-input" type="text" inputmode="numeric" maxlength="3" placeholder="Nr." value="" style="width:56px;padding:6px;border-radius:6px;border:1px solid #444;[...]
+                           <input class="num-input" type="text" inputmode="numeric" maxlength="3" placeholder="Nr." value="" style="width:56px;padding:6px;border-radius:6px;border:1px solid #444;">
                          </div>`;
         }
 
@@ -156,8 +157,8 @@ document.addEventListener("DOMContentLoaded", () => {
       li.innerHTML = `
         <label class="custom-line" style="display:flex;align-items:center;gap:8px;width:100%;" for="${chkId}">
           <input id="${chkId}" name="${chkId}" type="checkbox" class="custom-checkbox" ${pre ? "checked" : ""} style="flex:0 0 auto">
-          <input id="${numId}" name="${numId}" type="text" class="custom-num" inputmode="numeric" maxlength="3" placeholder="Nr." value="${escapeHtml(pre?.num || "")}" style="width:56px;flex:0 0 [...]
-          <input id="${nameId}" name="${nameId}" type="text" class="custom-name" placeholder="Eigener Spielername" value="${escapeHtml(pre?.name || "")}" style="flex:1;min-width:0;border-radius:6[...]
+          <input id="${numId}" name="${numId}" type="text" class="custom-num" inputmode="numeric" maxlength="3" placeholder="Nr." value="${escapeHtml(pre?.num || "")}" style="width:56px;flex:0 0 auto;">
+          <input id="${nameId}" name="${nameId}" type="text" class="custom-name" placeholder="Eigener Spielername" value="${escapeHtml(pre?.name || "")}" style="flex:1;min-width:0;border-radius:6px;">
         </label>`;
       playerListContainer.appendChild(li);
     }
@@ -2129,6 +2130,105 @@ document.addEventListener("DOMContentLoaded", () => {
   goalValueBtn?.addEventListener("click", () => showPageRef("goalValue"));
   backFromGoalValueBtn?.addEventListener("click", () => showPageRef("stats"));
   resetGoalValueBtn?.addEventListener("click", resetGoalValuePage);
+
+  // --- Fix: fehlende Navigation-Handler & Season CSV Export ---
+  // Binde Goal Map und Season Map Buttons auf Game Data Seite (falls vorhanden)
+  torbildBtn?.addEventListener("click", () => {
+    try {
+      showPageRef("torbild");
+      setTimeout(() => {}, 60);
+    } catch (e) {
+      console.warn("torbildBtn handler failed:", e);
+      document.getElementById("torbildPage")?.style && (document.getElementById("torbildPage").style.display = "block");
+    }
+  });
+
+  seasonMapBtn?.addEventListener("click", () => {
+    try {
+      showPageRef("seasonMap");
+      renderSeasonMapPage();
+    } catch (e) {
+      console.warn("seasonMapBtn handler failed:", e);
+      const el = document.getElementById("seasonMapPage");
+      if (el) el.style.display = "block";
+    }
+  });
+
+  // Export Season CSV (button id "exportSeasonBtn")
+  function exportSeasonCSV() {
+    try {
+      const header = [
+        "Nr","Spieler","Games",
+        "Goals","Assists","Points","+/-","Ø +/-",
+        "Shots","Shots/Game","Goals/Game","Points/Game",
+        "Penalty","Goal Value","FaceOffs","FaceOffs Won","FaceOffs %","Time"
+      ];
+      const rows = [header];
+
+      const names = Object.keys(seasonData || {});
+      if (names.length === 0) {
+        alert("Keine Season-Daten vorhanden.");
+        return;
+      }
+
+      names.forEach(name => {
+        const d = seasonData[name] || {};
+        const games = Number(d.games || 0);
+        const goals = Number(d.goals || 0);
+        const assists = Number(d.assists || 0);
+        const points = goals + assists;
+        const plusMinus = Number(d.plusMinus || 0);
+        const avgPlusMinus = games ? (plusMinus / games) : 0;
+        const shots = Number(d.shots || 0);
+        const shotsPerGame = games ? (shots / games) : 0;
+        const goalsPerGame = games ? (goals / games) : 0;
+        const pointsPerGame = games ? (points / games) : 0;
+        const penalty = Number(d.penaltys || 0);
+        const goalValue = (typeof d.goalValue !== "undefined") ? d.goalValue : (Number(d.goalValue || 0) || 0);
+        const faceOffs = Number(d.faceOffs || 0);
+        const faceOffsWon = Number(d.faceOffsWon || 0);
+        const faceOffPercent = faceOffs ? Math.round((faceOffsWon / faceOffs) * 100) : 0;
+        const timeSeconds = Number(d.timeSeconds || 0);
+
+        const row = [
+          d.num || "",
+          d.name || name,
+          String(games),
+          String(goals),
+          String(assists),
+          String(points),
+          String(plusMinus),
+          String(Number(avgPlusMinus.toFixed(1))),
+          String(shots),
+          String(Number(shotsPerGame.toFixed(1))),
+          String(Number(goalsPerGame.toFixed(1))),
+          String(Number(pointsPerGame.toFixed(1))),
+          String(penalty),
+          String(goalValue),
+          String(faceOffs),
+          String(faceOffsWon),
+          `${faceOffPercent}%`,
+          formatTimeMMSS(timeSeconds)
+        ];
+        rows.push(row);
+      });
+
+      const csv = rows.map(r => r.join(";")).join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "season.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(a.href);
+    } catch (e) {
+      console.error("exportSeasonCSV failed:", e);
+      alert("Fehler beim Export der Season-CSV. Sieh die Konsole an.");
+    }
+  }
+
+  document.getElementById("exportSeasonBtn")?.addEventListener("click", exportSeasonCSV);
 
   // ----- GOAL VALUE Helpers -----
   function getGoalValueOpponents() {
