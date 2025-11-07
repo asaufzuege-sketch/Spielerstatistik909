@@ -1,12 +1,12 @@
 // app.js
 // Vollständige Datei zum 1:1 Ersetzen
-// Änderungen:
-// - "Opponent" → "Gegner" (Defaults, Header-Inputs, Bottom-Label)
-// - GoalValue: Name-Spalte nur so breit wie nötig (nowrap), positive Werte grün + fett
-// - Streifen für Zeilen, Value-Spalte fett; Interaktionen erhalten
-// - Neu: Export-Button auf Season Map Seite -> exportiert seasonMapMarkers + seasonMapTimeData als JSON oder als PDF (jsPDF)
-// - Fix: Back-Button-Delegation wird jetzt korrekt direkt beim Laden registriert (nicht innerhalb beforeunload)
-// - Fix: Fehlende Navigation-Handler (Goal Map, Season Map) und Season CSV Export hinzugefügt
+// Änderungen / Wichtig:
+// - Season-Tabelle: Namen fett und linksbündig
+// - PDF-Export: versucht zuerst die Momentum-Tabelle (sofern im DOM vorhanden) zu übernehmen,
+//   sonst fällt er auf Time-Tracking zurück.
+// - PDF-Export: Marker-Positionen in Goal-Boxen werden jetzt auf Grundlage der tatsächlichen
+//   Bild-Render-Position im DOM berechnet, um vertikale/ horizontale Verschiebungen zu vermeiden.
+// - Diverse Fallbacks und defensive Prüfungen ergänzt.
 
 document.addEventListener("DOMContentLoaded", () => {
   // --- Elements (buttons remain in DOM per page) ---
@@ -981,11 +981,15 @@ document.addEventListener("DOMContentLoaded", () => {
         if (rawTime) timeData = JSON.parse(rawTime);
       } catch (e) { timeData = {}; }
 
+      // Try to find momentum DOM element (to "übernehmen" in PDF)
+      const momentumEl = document.querySelector('#momentumTable, .momentum-table, #seasonMapMomentum, .season-map-momentum');
+
       const drawTasks = (boxesDom.slice(0, destRects.length)).map(async (boxEl, idx) => {
         const imgEl = boxEl.querySelector('img');
         const dest = destRects[idx];
         const img = await loadImgFromImgEl(imgEl);
         if (img) {
+          // compute how image is rendered inside the dest (center-fit), same logic as in-app
           const sw = img.naturalWidth || img.width || dest.w;
           const sh = img.naturalHeight || img.height || dest.h;
           const scale = Math.min(dest.w / sw, dest.h / sh);
@@ -995,11 +999,52 @@ document.addEventListener("DOMContentLoaded", () => {
           const offY = dest.y + Math.round((dest.h - drawH) / 2);
           ctx.drawImage(img, offX, offY, drawW, drawH);
 
-          // markers
+          // markers: compute marker positions using the DOM rendering of the image to correct vertical/horizontal shifts.
+          // We'll try to compute DOM-rendered image offsets so markers line up like in the browser view.
+          let domBoxRect = null;
+          try { domBoxRect = imgEl.getBoundingClientRect(); } catch (e) { domBoxRect = null; }
+          let domNaturalW = img.naturalWidth || img.width || drawW;
+          let domNaturalH = img.naturalHeight || img.height || drawH;
+          let renderedW_dom = drawW;
+          let renderedH_dom = drawH;
+          let offsetX_dom = 0;
+          let offsetY_dom = 0;
+          if (domBoxRect && domNaturalW && domNaturalH) {
+            const boxW = domBoxRect.width || 1;
+            const boxH = domBoxRect.height || 1;
+            const scaleDom = Math.min(boxW / domNaturalW, boxH / domNaturalH);
+            renderedW_dom = domNaturalW * scaleDom;
+            renderedH_dom = domNaturalH * scaleDom;
+            offsetX_dom = (boxW - renderedW_dom) / 2;
+            offsetY_dom = (boxH - renderedH_dom) / 2;
+          }
+
           const markers = markersAll[idx] || [];
           markers.forEach(m => {
-            const x = dest.x + (m.xPct / 100) * dest.w;
-            const y = dest.y + (m.yPct / 100) * dest.h;
+            // m.xPct/m.yPct are percentages relative to the container (box), so first compute pixel pos in DOM box
+            // then transform to position relative to the DOM rendered image inside the box, compute ratios, then map to canvas drawn image
+            // fallback: direct dest mapping if DOM info missing
+            let x = dest.x + (m.xPct / 100) * dest.w;
+            let y = dest.y + (m.yPct / 100) * dest.h;
+
+            if (domBoxRect) {
+              // pixel position inside DOM box
+              const px_dom = (m.xPct / 100) * domBoxRect.width;
+              const py_dom = (m.yPct / 100) * domBoxRect.height;
+              // compute ratio inside DOM-rendered image
+              const rx = (px_dom - offsetX_dom) / (renderedW_dom || 1);
+              const ry = (py_dom - offsetY_dom) / (renderedH_dom || 1);
+              const rxClamped = Math.max(0, Math.min(1, isFinite(rx) ? rx : 0));
+              const ryClamped = Math.max(0, Math.min(1, isFinite(ry) ? ry : 0));
+              // map to canvas drawn image region
+              x = offX + rxClamped * drawW;
+              y = offY + ryClamped * drawH;
+            } else {
+              // as before (fallback)
+              x = dest.x + (m.xPct / 100) * dest.w;
+              y = dest.y + (m.yPct / 100) * dest.h;
+            }
+
             const r = Math.max(6, Math.round(Math.min(CANVAS_W, CANVAS_H) * 0.004));
             ctx.beginPath();
             ctx.fillStyle = m.color || '#444';
@@ -1028,22 +1073,65 @@ document.addEventListener("DOMContentLoaded", () => {
 
       await Promise.all(drawTasks);
 
-      // Render timeData bottom-left
+      // Render Momentum table (falls vorhanden) oder TimeData (Fallback)
+      // Suche typische Momentum-Elemente im DOM
+      const momentumEl = document.querySelector('#momentumTable, .momentum-table, #seasonMapMomentum, .season-map-momentum');
+      const labelX = MARGIN;
+      let labelY = CANVAS_H - MARGIN - 140;
+
       ctx.fillStyle = '#000';
       ctx.font = '16px Arial';
-      const labelX = MARGIN;
-      let labelY = CANVAS_H - MARGIN - 120;
-      ctx.fillText('Time Tracking (Season Map):', labelX, labelY);
-      labelY += 22;
-      const periods = Object.keys(timeData || {});
-      if (!periods.length) {
-        ctx.fillText('(keine Time-Data)', labelX, labelY);
-      } else {
-        ctx.font = '14px Arial';
-        periods.forEach(k => {
-          ctx.fillText(`${k}: ${JSON.stringify(timeData[k])}`, labelX, labelY);
+      if (momentumEl) {
+        // Versuche die Momentum-Tabelle zu lesen (Tabellenzeilen)
+        ctx.fillText('Momentum:', labelX, labelY);
+        labelY += 20;
+        ctx.font = '13px Arial';
+        try {
+          const rows = Array.from(momentumEl.querySelectorAll('tr'));
+          if (rows.length) {
+            rows.slice(0, 12).forEach((tr) => {
+              const texts = Array.from(tr.querySelectorAll('th,td')).map(td => td.textContent.trim());
+              const line = texts.join('  ');
+              ctx.fillText(line, labelX, labelY);
+              labelY += 16;
+            });
+          } else {
+            // Falls kein <tr>, nutze innerText
+            const lines = momentumEl.innerText.split(/\r?\n/).map(l => l.trim()).filter(l => l);
+            lines.slice(0, 10).forEach(ln => {
+              ctx.fillText(ln, labelX, labelY);
+              labelY += 16;
+            });
+          }
+        } catch (e) {
+          // fallback to timeData
+          ctx.fillText('(Momentum konnte nicht gelesen werden, Time Tracking stattdessen):', labelX, labelY);
           labelY += 18;
-        });
+          ctx.font = '14px Arial';
+          const periods = Object.keys(timeData || {});
+          if (!periods.length) {
+            ctx.fillText('(keine Time-Data)', labelX, labelY);
+          } else {
+            periods.forEach(k => {
+              ctx.fillText(`${k}: ${JSON.stringify(timeData[k])}`, labelX, labelY);
+              labelY += 14;
+            });
+          }
+        }
+      } else {
+        // Fallback: Time Tracking (wie bisher)
+        ctx.fillText('Time Tracking (Season Map):', labelX, labelY);
+        labelY += 22;
+        const periods = Object.keys(timeData || {});
+        if (!periods.length) {
+          ctx.fillText('(keine Time-Data)', labelX, labelY);
+        } else {
+          ctx.font = '14px Arial';
+          periods.forEach(k => {
+            ctx.fillText(`${k}: ${JSON.stringify(timeData[k])}`, labelX, labelY);
+            labelY += 18;
+          });
+        }
       }
 
       // Convert canvas to PNG data URL
@@ -1603,9 +1691,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
     displayRows.forEach(r => {
       const tr = document.createElement("tr");
-      r.cells.forEach(c => {
+      r.cells.forEach((c, cellIdx) => {
         const td = document.createElement("td");
         td.textContent = c;
+        // Make the "Spieler" column (index 1) left-aligned and bold per user's request
+        if (cellIdx === 1) {
+          td.style.textAlign = "left";
+          td.style.fontWeight = "700";
+        }
         tr.appendChild(td);
       });
       tbody.appendChild(tr);
@@ -1675,9 +1768,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const trTotal = document.createElement("tr");
       trTotal.className = "total-row";
-      totalCells.forEach(c => {
+      totalCells.forEach((c, idx) => {
         const td = document.createElement("td");
         td.textContent = c;
+        // keep the Spieler column left+bold in totals row too
+        if (idx === 1) {
+          td.style.textAlign = "left";
+          td.style.fontWeight = "700";
+        }
         td.style.background = headerBgColor;
         td.style.color = headerTextColor;
         td.style.fontWeight = "700";
@@ -1690,9 +1788,13 @@ document.addEventListener("DOMContentLoaded", () => {
       trTotal.className = "total-row";
       const emptyCells = new Array(headerCols.length).fill("");
       emptyCells[1] = "Total Ø";
-      emptyCells.forEach(c => {
+      emptyCells.forEach((c, idx) => {
         const td = document.createElement("td");
         td.textContent = c;
+        if (idx === 1) {
+          td.style.textAlign = "left";
+          td.style.fontWeight = "700";
+        }
         td.style.background = headerBgColor;
         td.style.color = headerTextColor;
         td.style.fontWeight = "700";
@@ -1905,6 +2007,9 @@ document.addEventListener("DOMContentLoaded", () => {
     totalsRow.id = "totalsRow";
     const tdEmpty = document.createElement("td"); tdEmpty.textContent = "";
     const tdTotalLabel = document.createElement("td"); tdTotalLabel.textContent = `Total (${selectedPlayers.length})`;
+    // Make totals label left-aligned and bold as well
+    tdTotalLabel.style.textAlign = "left";
+    tdTotalLabel.style.fontWeight = "700";
     totalsRow.appendChild(tdEmpty);
     totalsRow.appendChild(tdTotalLabel);
     categories.forEach(c => {
@@ -2659,56 +2764,4 @@ document.addEventListener("DOMContentLoaded", () => {
   updateTimerDisplay();
 
   // Save to localStorage on unload
-  window.addEventListener("beforeunload", () => {
-    try {
-      localStorage.setItem("statsData", JSON.stringify(statsData));
-      localStorage.setItem("selectedPlayers", JSON.stringify(selectedPlayers));
-      localStorage.setItem("playerTimes", JSON.stringify(playerTimes));
-      localStorage.setItem("timerSeconds", String(timerSeconds));
-      localStorage.setItem("seasonData", JSON.stringify(seasonData));
-      localStorage.setItem("goalValueOpponents", JSON.stringify(getGoalValueOpponents()));
-      localStorage.setItem("goalValueData", JSON.stringify(getGoalValueData()));
-      localStorage.setItem("goalValueBottom", JSON.stringify(getGoalValueBottom()));
-    } catch (e) {
-      // ignore
-    }
-  });
-
-  // Robust: zentrale Delegation für alle Back-Buttons (registriert sofort)
-  document.addEventListener('click', function (e) {
-    try {
-      const btn = e.target.closest && e.target.closest('button');
-      if (!btn) return;
-      const id = btn.id || '';
-
-      // Liste aller Back-Button-IDs, die die App verwendet
-      const backButtonIds = new Set([
-        'backToStatsBtn',
-        'backToStatsFromSeasonBtn',
-        'backToStatsFromSeasonMapBtn',
-        'backFromGoalValueBtn'
-      ]);
-
-      if (backButtonIds.has(id)) {
-        // Benutze showPage wenn verfügbar, sonst showPageRef fallback
-        if (typeof window.showPage === 'function') {
-          window.showPage('stats');
-        } else if (typeof showPageRef === 'function') {
-          showPageRef('stats');
-        } else if (typeof showPage === 'function') { // defensive
-          showPage('stats');
-        } else {
-          // letzter Notfall: einfache DOM-Umschaltung
-          document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
-          const statsP = document.getElementById('statsPage');
-          if (statsP) statsP.style.display = 'block';
-        }
-        e.preventDefault();
-        e.stopPropagation();
-      }
-    } catch (err) {
-      console.warn('Back button delegation failed:', err);
-    }
-  }, true);
-
-});
+  window.addEvent
