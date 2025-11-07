@@ -2570,6 +2570,40 @@ document.addEventListener("DOMContentLoaded", () => {
       localStorage.setItem("goalValueBottom", JSON.stringify(getGoalValueBottom()));
     } catch (e) {
       // ignore
+    }document.addEventListener('click', function (e) {
+  try {
+    const btn = e.target.closest && e.target.closest('button');
+    if (!btn) return;
+    const id = btn.id || '';
+
+    // Liste aller Back-Button-IDs, die die App verwendet
+    const backButtonIds = new Set([
+      'backToStatsBtn',
+      'backToStatsFromSeasonBtn',
+      'backToStatsFromSeasonMapBtn',
+      'backFromGoalValueBtn'
+    ]);
+
+    if (backButtonIds.has(id)) {
+      // Benutze showPage wenn verfügbar, sonst showPageRef fallback
+      if (typeof window.showPage === 'function') {
+        window.showPage('stats');
+      } else if (typeof showPageRef === 'function') {
+        showPageRef('stats');
+      } else if (typeof showPage === 'function') { // defensive
+        showPage('stats');
+      } else {
+        // letzter Notfall: einfache DOM-Umschaltung
+        document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
+        const statsP = document.getElementById('statsPage');
+        if (statsP) statsP.style.display = 'block';
+      }
+      e.preventDefault();
+      e.stopPropagation();
     }
+  } catch (err) {
+    console.warn('Back button delegation failed:', err);
+  }
+}, true);
   });
 });
