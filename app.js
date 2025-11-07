@@ -4,7 +4,7 @@
 // - "Opponent" → "Gegner" (Defaults, Header-Inputs, Bottom-Label)
 // - GoalValue: Name-Spalte nur so breit wie nötig (nowrap), positive Werte grün + fett
 // - Streifen für Zeilen, Value-Spalte fett; Interaktionen erhalten
-// - Neu: Export-Button auf Season Map Seite -> exportiert seasonMapMarkers + seasonMapTimeData als JSON
+// - Neu: Export-Button auf Season Map Seite -> exportiert seasonMapMarkers + seasonMapTimeData als JSON oder als PDF (jsPDF)
 
 document.addEventListener("DOMContentLoaded", () => {
   // --- Elements (buttons remain in DOM per page) ---
@@ -895,6 +895,200 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // --- PDF Export: erstellt A4-PDF mit Canvas (verwendet jsPDF UMD) ---
+  async function exportSeasonMapPagePDF() {
+    try {
+      // Canvas-Größe (A4 @300 DPI) — 2480 x 3508 px (portrait)
+      const CANVAS_W = 2480;
+      const CANVAS_H = 3508;
+      const MARGIN = Math.round(CANVAS_W * 0.04); // 4% margin
+
+      const canvas = document.createElement('canvas');
+      canvas.width = CANVAS_W;
+      canvas.height = CANVAS_H;
+      const ctx = canvas.getContext('2d');
+
+      // Weißer Hintergrund
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+      // Layout: left = field column (~65%), right = goal column (~35%)
+      const usableW = CANVAS_W - 2 * MARGIN;
+      const usableH = CANVAS_H - 2 * MARGIN;
+      const fieldColW = Math.round(usableW * 0.65);
+      const goalColW = usableW - fieldColW - Math.round(MARGIN * 0.5);
+
+      const fieldRect = { x: MARGIN, y: MARGIN, w: fieldColW, h: usableH };
+      const goalRect = { x: MARGIN + fieldColW + Math.round(MARGIN * 0.5), y: MARGIN, w: goalColW, h: usableH };
+
+      // Ziel-Rects für bis zu 3 goal images (oben/mitte/unten)
+      const goalBoxes = [];
+      const goalBoxCount = 3;
+      const perGoalH = Math.floor(goalRect.h / goalBoxCount);
+      for (let i = 0; i < goalBoxCount; i++) {
+        goalBoxes.push({ x: goalRect.x, y: goalRect.y + i * perGoalH, w: goalRect.w, h: perGoalH });
+      }
+
+      // DOM boxes in the seasonMap page
+      let boxesDom = Array.from(document.querySelectorAll('#seasonMapPage .field-box, #seasonMapPage .goal-img-box'));
+      if (!boxesDom.length) {
+        boxesDom = Array.from(document.querySelectorAll('#torbildPage .field-box, #torbildPage .goal-img-box'));
+      }
+
+      const destRects = [];
+      if (boxesDom.length > 0) {
+        destRects.push(fieldRect);
+        for (let i = 1; i < boxesDom.length && i <= goalBoxCount; i++) destRects.push(goalBoxes[i - 1]);
+      }
+
+      function loadImgFromImgEl(imgEl) {
+        return new Promise((resolve) => {
+          if (!imgEl) return resolve(null);
+          // if already loaded and same-origin
+          if (imgEl.complete && imgEl.naturalWidth) return resolve(imgEl);
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => resolve(img);
+          img.onerror = () => resolve(null);
+          img.src = imgEl.src;
+        });
+      }
+
+      // Marker data from storage or DOM
+      let markersAll = [];
+      try {
+        const raw = localStorage.getItem('seasonMapMarkers');
+        if (raw) markersAll = JSON.parse(raw);
+      } catch (e) { markersAll = []; }
+
+      if ((!markersAll || !markersAll.length) && boxesDom.length) {
+        markersAll = boxesDom.map(box => {
+          return Array.from(box.querySelectorAll('.marker-dot')).map(dot => {
+            const left = dot.style.left || '0%';
+            const top = dot.style.top || '0%';
+            const color = dot.style.backgroundColor || '#444';
+            return { xPct: parseFloat(String(left).replace('%','')) || 0, yPct: parseFloat(String(top).replace('%','')) || 0, color };
+          });
+        });
+      }
+
+      // Time tracking
+      let timeData = {};
+      try {
+        const rawTime = localStorage.getItem('seasonMapTimeData');
+        if (rawTime) timeData = JSON.parse(rawTime);
+      } catch (e) { timeData = {}; }
+
+      const drawTasks = (boxesDom.slice(0, destRects.length)).map(async (boxEl, idx) => {
+        const imgEl = boxEl.querySelector('img');
+        const dest = destRects[idx];
+        const img = await loadImgFromImgEl(imgEl);
+        if (img) {
+          const sw = img.naturalWidth || img.width || dest.w;
+          const sh = img.naturalHeight || img.height || dest.h;
+          const scale = Math.min(dest.w / sw, dest.h / sh);
+          const drawW = Math.round(sw * scale);
+          const drawH = Math.round(sh * scale);
+          const offX = dest.x + Math.round((dest.w - drawW) / 2);
+          const offY = dest.y + Math.round((dest.h - drawH) / 2);
+          ctx.drawImage(img, offX, offY, drawW, drawH);
+
+          // markers
+          const markers = markersAll[idx] || [];
+          markers.forEach(m => {
+            const x = dest.x + (m.xPct / 100) * dest.w;
+            const y = dest.y + (m.yPct / 100) * dest.h;
+            const r = Math.max(6, Math.round(Math.min(CANVAS_W, CANVAS_H) * 0.004));
+            ctx.beginPath();
+            ctx.fillStyle = m.color || '#444';
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.lineWidth = Math.max(1, Math.round(r * 0.28));
+            ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+            ctx.stroke();
+          });
+
+          // small label
+          const markersCount = (markers && markers.length) ? markers.length : 0;
+          ctx.fillStyle = 'rgba(255,255,255,0.95)';
+          ctx.font = `${Math.max(10, Math.round(dest.h * 0.035))}px Arial`;
+          ctx.fillText(`Markers: ${markersCount}`, dest.x + 8, dest.y + 24);
+        } else {
+          ctx.fillStyle = '#f4f4f4';
+          ctx.fillRect(dest.x, dest.y, dest.w, dest.h);
+          ctx.strokeStyle = '#ccc';
+          ctx.strokeRect(dest.x, dest.y, dest.w, dest.h);
+          ctx.fillStyle = '#777';
+          ctx.font = '18px Arial';
+          ctx.fillText('Bild nicht verfügbar', dest.x + 10, dest.y + 30);
+        }
+      });
+
+      await Promise.all(drawTasks);
+
+      // Render timeData bottom-left
+      ctx.fillStyle = '#000';
+      ctx.font = '16px Arial';
+      const labelX = MARGIN;
+      let labelY = CANVAS_H - MARGIN - 120;
+      ctx.fillText('Time Tracking (Season Map):', labelX, labelY);
+      labelY += 22;
+      const periods = Object.keys(timeData || {});
+      if (!periods.length) {
+        ctx.fillText('(keine Time-Data)', labelX, labelY);
+      } else {
+        ctx.font = '14px Arial';
+        periods.forEach(k => {
+          ctx.fillText(`${k}: ${JSON.stringify(timeData[k])}`, labelX, labelY);
+          labelY += 18;
+        });
+      }
+
+      // Convert canvas to PNG data URL
+      const imgData = canvas.toDataURL('image/png');
+
+      // jsPDF constructor detection
+      let jsPDFCtor = null;
+      if (window.jspdf && window.jspdf.jsPDF) jsPDFCtor = window.jspdf.jsPDF;
+      else if (window.jspdf && window.jspdf.default) jsPDFCtor = window.jspdf.default;
+      else if (window.jsPDF) jsPDFCtor = window.jsPDF;
+      else if (window.jspdf) jsPDFCtor = window.jspdf;
+      if (!jsPDFCtor) {
+        alert('jsPDF wurde nicht gefunden. PDF-Export nicht möglich. Führe stattdessen den PNG-Export aus.');
+        const a = document.createElement('a');
+        a.href = imgData;
+        a.download = 'season_map_a4.png';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        return;
+      }
+
+      const pdf = new jsPDFCtor({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+      const pageWidthMm = 210;
+      const pageHeightMm = 297;
+      const marginMm = 10; // 10 mm margins
+      const drawWidthMm = pageWidthMm - 2 * marginMm;
+      const canvasAspect = canvas.height / canvas.width;
+      let drawHeightMm = drawWidthMm * canvasAspect;
+      let finalDrawWidthMm = drawWidthMm;
+      let finalDrawHeightMm = drawHeightMm;
+      if (finalDrawHeightMm > pageHeightMm - 2 * marginMm) {
+        finalDrawHeightMm = pageHeightMm - 2 * marginMm;
+        finalDrawWidthMm = finalDrawHeightMm / canvasAspect;
+      }
+      const xMm = (pageWidthMm - finalDrawWidthMm) / 2;
+      const yMm = (pageHeightMm - finalDrawHeightMm) / 2;
+
+      pdf.addImage(imgData, 'PNG', xMm, yMm, finalDrawWidthMm, finalDrawHeightMm);
+      pdf.save('season_map_a4.pdf');
+
+    } catch (e) {
+      console.error('PDF Export fehlgeschlagen:', e);
+      alert('Fehler beim PDF-Export. Sieh die Konsole an.');
+    }
+  }
+
   // --- renderGoalAreaStats (unchanged) ---
   function renderGoalAreaStats() {
     const seasonMapRoot = document.getElementById("seasonMapPage");
@@ -1055,26 +1249,28 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Event for new button on season map page
+  // Event for new button on season map page: ask user PNG or PDF
   if (exportSeasonMapPageBtn) {
-    exportSeasonMapPageBtn.addEventListener("click", () => exportSeasonMapPage());
-  }
-
-  // Ensure torbild page behavior when opening torbild
-  if (torbildBtn) {
-    torbildBtn.addEventListener("click", () => {
-      showPage("torbild");
-      setTimeout(() => {}, 60);
+    exportSeasonMapPageBtn.addEventListener("click", () => {
+      const choice = confirm('OK = PNG herunterladen\nAbbrechen = PDF via jsPDF (direkter Download)');
+      if (choice) {
+        // PNG download: render same canvas and download
+        // reuse exportSeasonMapPagePDF but fallback to PNG if jsPDF missing
+        (async () => {
+          try {
+            // call PDF exporter but if jsPDF not found it will fallback to PNG
+            await exportSeasonMapPagePDF();
+          } catch (e) {
+            console.error(e);
+            alert('Fehler beim Export. Sieh die Konsole an.');
+          }
+        })();
+      } else {
+        // direct PDF export
+        exportSeasonMapPagePDF();
+      }
     });
   }
-  if (seasonMapBtn) {
-    seasonMapBtn.addEventListener("click", () => {
-      showPage("seasonMap");
-      renderSeasonMapPage();
-    });
-  }
-  if (backToStatsFromSeasonMapBtn) backToStatsFromSeasonMapBtn.addEventListener("click", () => showPage("stats"));
-  if (document.getElementById("resetSeasonMapBtn")) document.getElementById("resetSeasonMapBtn").addEventListener("click", resetSeasonMap);
 
   // --- Season export (Stats -> Season) (modified flow) ---
   const exportSeasonHandler = () => {
