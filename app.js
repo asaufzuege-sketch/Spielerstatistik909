@@ -4,6 +4,7 @@
 // - "Opponent" → "Gegner" (Defaults, Header-Inputs, Bottom-Label)
 // - GoalValue: Name-Spalte nur so breit wie nötig (nowrap), positive Werte grün + fett
 // - Streifen für Zeilen, Value-Spalte fett; Interaktionen erhalten
+// - Neu: Export-Button auf Season Map Seite -> exportiert seasonMapMarkers + seasonMapTimeData als JSON
 
 document.addEventListener("DOMContentLoaded", () => {
   // --- Elements (buttons remain in DOM per page) ---
@@ -55,6 +56,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const exportSeasonFromStatsBtn = document.getElementById("exportSeasonFromStatsBtn");
   const exportSeasonMapBtn = document.getElementById("exportSeasonMapBtn");
   const exportSeasonBtn = document.getElementById("exportSeasonBtn");
+  // Neu: Export-Button auf der Season-Map-Seite
+  const exportSeasonMapPageBtn = document.getElementById("exportSeasonMapPageBtn");
 
   const torbildBoxesSelector = "#torbildPage .field-box, #torbildPage .goal-img-box";
   const seasonMapBoxesSelector = "#seasonMapPage .field-box, #seasonMapPage .goal-img-box";
@@ -129,7 +132,7 @@ document.addEventListener("DOMContentLoaded", () => {
           numAreaHtml = `<div class="num" style="flex:0 0 48px;text-align:center;"><strong>${escapeHtml(p.num)}</strong></div>`;
         } else {
           numAreaHtml = `<div style="flex:0 0 64px;text-align:center;">
-                           <input class="num-input" type="text" inputmode="numeric" maxlength="3" placeholder="Nr." value="" style="width:56px;padding:6px;border-radius:6px;border:1px solid #444;background:var(--row-even);color:var(--text-color)">
+                           <input class="num-input" type="text" inputmode="numeric" maxlength="3" placeholder="Nr." value="" style="width:56px;padding:6px;border-radius:6px;border:1px solid #444;[...]
                          </div>`;
         }
 
@@ -152,8 +155,8 @@ document.addEventListener("DOMContentLoaded", () => {
       li.innerHTML = `
         <label class="custom-line" style="display:flex;align-items:center;gap:8px;width:100%;" for="${chkId}">
           <input id="${chkId}" name="${chkId}" type="checkbox" class="custom-checkbox" ${pre ? "checked" : ""} style="flex:0 0 auto">
-          <input id="${numId}" name="${numId}" type="text" class="custom-num" inputmode="numeric" maxlength="3" placeholder="Nr." value="${escapeHtml(pre?.num || "")}" style="width:56px;flex:0 0 auto;border-radius:6px;border:1px solid #444;background:var(--row-even);color:var(--text-color);padding:6px">
-          <input id="${nameId}" name="${nameId}" type="text" class="custom-name" placeholder="Eigener Spielername" value="${escapeHtml(pre?.name || "")}" style="flex:1;min-width:0;border-radius:6px;border:1px solid #444;padding:6px;background:var(--row-even);color:var(--text-color)">
+          <input id="${numId}" name="${numId}" type="text" class="custom-num" inputmode="numeric" maxlength="3" placeholder="Nr." value="${escapeHtml(pre?.num || "")}" style="width:56px;flex:0 0 [...]
+          <input id="${nameId}" name="${nameId}" type="text" class="custom-name" placeholder="Eigener Spielername" value="${escapeHtml(pre?.name || "")}" style="flex:1;min-width:0;border-radius:6[...]
         </label>`;
       playerListContainer.appendChild(li);
     }
@@ -870,6 +873,28 @@ document.addEventListener("DOMContentLoaded", () => {
     renderSeasonMapPage();
   }
 
+  // --- Neuer Handler: Export Season Map direkt von der Season-Map-Seite (JSON export) ---
+  function exportSeasonMapPage() {
+    try {
+      const markersRaw = localStorage.getItem("seasonMapMarkers") || "[]";
+      const timeRaw = localStorage.getItem("seasonMapTimeData") || "{}";
+      const payload = {
+        exportedAt: new Date().toISOString(),
+        markers: JSON.parse(markersRaw),
+        timeData: JSON.parse(timeRaw)
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "season_map_export.json";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) {
+      console.error("Export season map failed:", e);
+      alert("Export fehlgeschlagen (siehe Konsole).");
+    }
+  }
+
   // --- renderGoalAreaStats (unchanged) ---
   function renderGoalAreaStats() {
     const seasonMapRoot = document.getElementById("seasonMapPage");
@@ -1028,6 +1053,11 @@ document.addEventListener("DOMContentLoaded", () => {
     exportSeasonMapBtn.addEventListener("click", () => {
       exportSeasonMapFromTorbild();
     });
+  }
+
+  // Event for new button on season map page
+  if (exportSeasonMapPageBtn) {
+    exportSeasonMapPageBtn.addEventListener("click", () => exportSeasonMapPage());
   }
 
   // Ensure torbild page behavior when opening torbild
