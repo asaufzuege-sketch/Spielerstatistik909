@@ -5,6 +5,7 @@
 // - GoalValue: Name-Spalte nur so breit wie nötig (nowrap), positive Werte grün + fett
 // - Streifen für Zeilen, Value-Spalte fett; Interaktionen erhalten
 // - Neu: Export-Button auf Season Map Seite -> exportiert seasonMapMarkers + seasonMapTimeData als JSON oder als PDF (jsPDF)
+// - Fix: Back-Button-Delegation wird jetzt korrekt direkt beim Laden registriert (nicht innerhalb beforeunload)
 
 document.addEventListener("DOMContentLoaded", () => {
   // --- Elements (buttons remain in DOM per page) ---
@@ -2570,40 +2571,44 @@ document.addEventListener("DOMContentLoaded", () => {
       localStorage.setItem("goalValueBottom", JSON.stringify(getGoalValueBottom()));
     } catch (e) {
       // ignore
-    }document.addEventListener('click', function (e) {
-  try {
-    const btn = e.target.closest && e.target.closest('button');
-    if (!btn) return;
-    const id = btn.id || '';
-
-    // Liste aller Back-Button-IDs, die die App verwendet
-    const backButtonIds = new Set([
-      'backToStatsBtn',
-      'backToStatsFromSeasonBtn',
-      'backToStatsFromSeasonMapBtn',
-      'backFromGoalValueBtn'
-    ]);
-
-    if (backButtonIds.has(id)) {
-      // Benutze showPage wenn verfügbar, sonst showPageRef fallback
-      if (typeof window.showPage === 'function') {
-        window.showPage('stats');
-      } else if (typeof showPageRef === 'function') {
-        showPageRef('stats');
-      } else if (typeof showPage === 'function') { // defensive
-        showPage('stats');
-      } else {
-        // letzter Notfall: einfache DOM-Umschaltung
-        document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
-        const statsP = document.getElementById('statsPage');
-        if (statsP) statsP.style.display = 'block';
-      }
-      e.preventDefault();
-      e.stopPropagation();
     }
-  } catch (err) {
-    console.warn('Back button delegation failed:', err);
-  }
-}, true);
   });
+
+  // Robust: zentrale Delegation für alle Back-Buttons (registriert sofort)
+  document.addEventListener('click', function (e) {
+    try {
+      const btn = e.target.closest && e.target.closest('button');
+      if (!btn) return;
+      const id = btn.id || '';
+
+      // Liste aller Back-Button-IDs, die die App verwendet
+      const backButtonIds = new Set([
+        'backToStatsBtn',
+        'backToStatsFromSeasonBtn',
+        'backToStatsFromSeasonMapBtn',
+        'backFromGoalValueBtn'
+      ]);
+
+      if (backButtonIds.has(id)) {
+        // Benutze showPage wenn verfügbar, sonst showPageRef fallback
+        if (typeof window.showPage === 'function') {
+          window.showPage('stats');
+        } else if (typeof showPageRef === 'function') {
+          showPageRef('stats');
+        } else if (typeof showPage === 'function') { // defensive
+          showPage('stats');
+        } else {
+          // letzter Notfall: einfache DOM-Umschaltung
+          document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
+          const statsP = document.getElementById('statsPage');
+          if (statsP) statsP.style.display = 'block';
+        }
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    } catch (err) {
+      console.warn('Back button delegation failed:', err);
+    }
+  }, true);
+
 });
