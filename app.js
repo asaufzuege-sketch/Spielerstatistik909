@@ -10,8 +10,12 @@
 // - Fix: entfernte doppelte Declaration von `momentumEl`, um SyntaxError zu vermeiden.
 // - Zusätzliche Fixes: Berücksichtigung von CSS object-fit (cover / contain / fill / none) beim
 //   Berechnen der tatsächlichen Bild-Render-Größe für Marker (Click-Positionen & PDF-Export).
-// - Achte darauf, dass diese Datei die gesamte app.js ersetzt — sie wurde geprüft auf
-//   korrekte Klammer- und Funktionsschlüsse, damit kein "Unexpected end of input" mehr auftritt.
+// - Neue Spalte "Shots %" in Season-Tabelle (zwischen Shots/Game und Goals/Game) mit
+//   Schuss-zu-Tor-Verhältnis (goals/shots * 100, 0% falls keine Schüsse).
+// - Season- und GoalValue-Tabellen linksbündig gemacht (marginLeft / marginRight angepasst).
+// - Season-Map: Bilder in den Goal-Boxen werden in renderSeasonMapPage jetzt so gestylt,
+//   dass sie die Boxen besser ausfüllen (object-fit: cover; width/height:100%), damit Marker
+//   Positionen übereinstimmen. Export-Logik berücksichtigt weiterhin das tatsächliche gerenderte Bild.
 
 document.addEventListener("DOMContentLoaded", () => {
   // --- Elements (buttons remain in DOM per page) ---
@@ -622,7 +626,6 @@ document.addEventListener("DOMContentLoaded", () => {
       if (objectFit === 'cover') {
         scale = Math.max(boxW / naturalW, boxH / naturalH);
       } else if (objectFit === 'fill') {
-        // fill stretches independently; treat as cover for mapping but we cannot recover aspect; assume stretch
         const scaleX = boxW / naturalW;
         const scaleY = boxH / naturalH;
         return {
@@ -1036,10 +1039,8 @@ document.addEventListener("DOMContentLoaded", () => {
           let offsetX_dom = 0;
           let offsetY_dom = 0;
           if (domBoxRect && domNaturalW && domNaturalH) {
-            // Use the same helper as in click mapping to match runtime rendering (object-fit aware)
             const rendered = computeRenderedImageRect(imgEl);
             if (rendered) {
-              // rendered.x/y are client coordinates; convert to offsets relative to domBoxRect.left/top
               offsetX_dom = rendered.x - domBoxRect.left;
               offsetY_dom = rendered.y - domBoxRect.top;
               renderedW_dom = rendered.width;
@@ -1057,24 +1058,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
           const markers = markersAll[idx] || [];
           markers.forEach(m => {
-            // default mapping: percent within dest rect
             let x = dest.x + (m.xPct / 100) * dest.w;
             let y = dest.y + (m.yPct / 100) * dest.h;
 
             if (domBoxRect) {
-              // The stored xPct/yPct are relative to the container (box) when user placed markers.
-              // To map to canvas we convert percent -> pixel inside DOM box, then map relative to actual rendered image area,
-              // and then map into the canvas drawing coordinates (offX, offY, drawW, drawH).
               const px_dom = (m.xPct / 100) * domBoxRect.width;
               const py_dom = (m.yPct / 100) * domBoxRect.height;
 
-              // convert px_dom/py_dom into relative coords within the rendered image area
               const rx = (px_dom - offsetX_dom) / (renderedW_dom || 1);
               const ry = (py_dom - offsetY_dom) / (renderedH_dom || 1);
               const rxClamped = Math.max(0, Math.min(1, isFinite(rx) ? rx : 0));
               const ryClamped = Math.max(0, Math.min(1, isFinite(ry) ? ry : 0));
 
-              // map to canvas image drawn area
               x = offX + rxClamped * drawW;
               y = offY + ryClamped * drawH;
             } else {
@@ -1320,6 +1315,20 @@ document.addEventListener("DOMContentLoaded", () => {
     const boxes = Array.from(document.querySelectorAll(seasonMapBoxesSelector));
     boxes.forEach(box => box.querySelectorAll(".marker-dot").forEach(d => d.remove()));
 
+    // Ensure season-map images fill their box (makes marker mapping consistent with Goal Map)
+    boxes.forEach(box => {
+      const img = box.querySelector("img");
+      if (img) {
+        try {
+          img.style.objectFit = img.style.objectFit || 'cover'; // prefer cover so box is filled
+          img.style.width = img.style.width || '100%';
+          img.style.height = img.style.height || '100%';
+          // ensure container hides overflow so cover crops as expected
+          box.style.overflow = box.style.overflow || 'hidden';
+        } catch (e) {}
+      }
+    });
+
     const raw = localStorage.getItem("seasonMapMarkers");
     if (raw) {
       try {
@@ -1549,16 +1558,22 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!container) return;
     container.innerHTML = "";
 
+    // Move table more to the left: ensure container and table styles are left-aligned
+    container.style.textAlign = container.style.textAlign || "left";
+
     const headerCols = [
       "Nr", "Spieler", "Games",
       "Goals", "Assists", "Points", "+/-", "Ø +/-",
-      "Shots", "Shots/Game", "Goals/Game", "Points/Game",
+      "Shots", "Shots/Game", "Shots %", "Goals/Game", "Points/Game",
       "Penalty", "Goal Value", "FaceOffs", "FaceOffs Won", "FaceOffs %", "Time",
       "MVP", "MVP Points"
     ];
 
     const table = document.createElement("table");
     table.className = "stats-table";
+    table.style.width = table.style.width || "auto";
+    table.style.marginLeft = "0";
+    table.style.marginRight = "auto";
 
     table.style.borderRadius = "8px";
     table.style.overflow = "hidden";
@@ -1604,6 +1619,9 @@ document.addEventListener("DOMContentLoaded", () => {
       const goalsPerGame = games ? (goals / games) : 0;
       const pointsPerGame = games ? (points / games) : 0;
 
+      // Shots %: goals to shots ratio, in percent
+      const shotsPercent = shots ? Math.round((goals / shots) * 100) : 0;
+
       let goalValue = "";
       try {
         if (typeof computeValueForPlayer === "function") {
@@ -1640,6 +1658,7 @@ document.addEventListener("DOMContentLoaded", () => {
         Number(avgPlusMinus.toFixed(1)),
         shots,
         Number(shotsPerGame.toFixed(1)),
+        `${shotsPercent}%`,
         Number(goalsPerGame.toFixed(1)),
         Number(pointsPerGame.toFixed(1)),
         penalty,
@@ -1745,6 +1764,9 @@ document.addEventListener("DOMContentLoaded", () => {
       const avgFaceOffPercent = avgFaceOffs ? Math.round((avgFaceOffsWon / avgFaceOffs) * 100) : 0;
       const avgTimeSeconds = Math.round(sums.timeSeconds / count);
 
+      // Overall shots->goals percentage
+      const overallShotsPercent = sums.shots ? Math.round((sums.goals / sums.shots) * 100) : 0;
+
       const totalCells = new Array(headerCols.length).fill("");
       totalCells[1] = "Total Ø";
       totalCells[2] = Number((avgGames).toFixed(1));
@@ -1753,16 +1775,17 @@ document.addEventListener("DOMContentLoaded", () => {
       totalCells[5] = Number((avgPoints).toFixed(1));
       totalCells[6] = Number((avgPlusMinus).toFixed(1));
       totalCells[7] = Number((avgPlusMinus).toFixed(1));
-      totalCells[8] = Number((avgShots).toFixed(1));
-      totalCells[9] = Number((avgShots / (avgGames || 1)).toFixed(1));
-      totalCells[10] = Number((avgGoals / (avgGames || 1)).toFixed(1));
-      totalCells[11] = Number((avgPoints / (avgGames || 1)).toFixed(1));
-      totalCells[12] = Number((avgPenalty).toFixed(1));
-      totalCells[13] = "";
-      totalCells[14] = Number((avgFaceOffs).toFixed(1));
-      totalCells[15] = Number((avgFaceOffsWon).toFixed(1));
-      totalCells[16] = `${avgFaceOffPercent}%`;
-      totalCells[17] = formatTimeMMSS(avgTimeSeconds);
+      totalCells[8] = Number((avgShots).toFixed(1)); // Shots
+      totalCells[9] = Number((avgShots / (avgGames || 1)).toFixed(1)); // Shots/Game
+      totalCells[10] = `${overallShotsPercent}%`; // Shots %
+      totalCells[11] = Number((avgGoals / (avgGames || 1)).toFixed(1)); // Goals/Game
+      totalCells[12] = Number((avgPoints / (avgGames || 1)).toFixed(1)); // Points/Game
+      totalCells[13] = Number((avgPenalty).toFixed(1));
+      totalCells[14] = "";
+      totalCells[15] = Number((avgFaceOffs).toFixed(1));
+      totalCells[16] = Number((avgFaceOffsWon).toFixed(1));
+      totalCells[17] = `${avgFaceOffPercent}%`;
+      totalCells[18] = formatTimeMMSS(avgTimeSeconds);
 
       const trTotal = document.createElement("tr");
       trTotal.className = "total-row";
@@ -2325,9 +2348,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const bottom = getGoalValueBottom();
     const playerNames = Object.keys(seasonData).length ? Object.keys(seasonData).sort() : selectedPlayers.map(p=>p.name);
 
+    // Align table more to the left
+    goalValueContainer.style.textAlign = goalValueContainer.style.textAlign || "left";
+
     const table = document.createElement("table");
     table.className = "goalvalue-table";
-    table.style.width = "100%";
+    table.style.width = table.style.width || "auto";
+    table.style.marginLeft = "0";
+    table.style.marginRight = "auto";
     table.style.borderCollapse = "collapse";
     table.style.borderRadius = "8px";
     table.style.overflow = "hidden";
