@@ -170,8 +170,8 @@ document.addEventListener("DOMContentLoaded", () => {
       li.innerHTML = `
         <label class="custom-line" style="display:flex;align-items:center;gap:8px;width:100%;" for="${chkId}">
           <input id="${chkId}" name="${chkId}" type="checkbox" class="custom-checkbox" ${pre ? "checked" : ""} style="flex:0 0 auto">
-          <input id="${numId}" name="${numId}" type="text" class="custom-num" inputmode="numeric" maxlength="3" placeholder="Nr." value="${escapeHtml(pre?.num || "")}" style="width:56px;flex:0 0 auto;">
-          <input id="${nameId}" name="${nameId}" type="text" class="custom-name" placeholder="Eigener Spielername" value="${escapeHtml(pre?.name || "")}" style="flex:1;min-width:0;border-radius:6px;">
+          <input id="${numId}" name="${numId}" type="text" class="custom-num" inputmode="numeric" maxlength="3" placeholder="Nr." value="${escapeHtml(pre?.num || "")}" style="width:56px;flex:0 0 auto;padding:6px;border-radius:6px;border:1px solid #444;">
+          <input id="${nameId}" name="${nameId}" type="text" class="custom-name" placeholder="Eigener Spielername" value="${escapeHtml(pre?.name || "")}" style="flex:1;min-width:0;border-radius:6px;padding:6px;border:1px solid #444;">
         </label>`;
       playerListContainer.appendChild(li);
     }
@@ -2624,4 +2624,4 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }, true);
 
-}); 
+});
