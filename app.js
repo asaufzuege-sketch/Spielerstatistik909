@@ -8,6 +8,8 @@
 //   Bild-Render-Position im DOM berechnet, um vertikale/ horizontale Verschiebungen zu vermeiden.
 // - Diverse Fallbacks und defensive Prüfungen ergänzt.
 // - Fix: entfernte doppelte Declaration von `momentumEl`, um SyntaxError zu vermeiden.
+// - Zusätzliche Fixes: Berücksichtigung von CSS object-fit (cover / contain / fill / none) beim
+//   Berechnen der tatsächlichen Bild-Render-Größe für Marker (Click-Positionen & PDF-Export).
 // - Achte darauf, dass diese Datei die gesamte app.js ersetzt — sie wurde geprüft auf
 //   korrekte Klammer- und Funktionsschlüsse, damit kein "Unexpected end of input" mehr auftritt.
 
@@ -605,6 +607,52 @@ document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll(".marker-dot").forEach(d => d.remove());
   }
 
+  // Helper: compute rendered size & offset for an <img> within its container, honoring object-fit
+  function computeRenderedImageRect(imgEl) {
+    try {
+      const boxRect = imgEl.getBoundingClientRect();
+      const naturalW = imgEl.naturalWidth || imgEl.width || 1;
+      const naturalH = imgEl.naturalHeight || imgEl.height || 1;
+      const boxW = boxRect.width || 1;
+      const boxH = boxRect.height || 1;
+      const cs = getComputedStyle(imgEl);
+      const objectFit = (cs && cs.getPropertyValue('object-fit')) ? cs.getPropertyValue('object-fit').trim() : 'contain';
+
+      let scale;
+      if (objectFit === 'cover') {
+        scale = Math.max(boxW / naturalW, boxH / naturalH);
+      } else if (objectFit === 'fill') {
+        // fill stretches independently; treat as cover for mapping but we cannot recover aspect; assume stretch
+        const scaleX = boxW / naturalW;
+        const scaleY = boxH / naturalH;
+        return {
+          x: boxRect.left,
+          y: boxRect.top,
+          width: naturalW * scaleX,
+          height: naturalH * scaleY
+        };
+      } else if (objectFit === 'none') {
+        scale = 1;
+      } else {
+        // default to 'contain'
+        scale = Math.min(boxW / naturalW, boxH / naturalH);
+      }
+
+      const renderedW = naturalW * scale;
+      const renderedH = naturalH * scale;
+      const offsetX = boxRect.left + (boxW - renderedW) / 2;
+      const offsetY = boxRect.top + (boxH - renderedH) / 2;
+      return {
+        x: offsetX,
+        y: offsetY,
+        width: renderedW,
+        height: renderedH
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
   function attachMarkerHandlersToBoxes(rootSelector) {
     document.querySelectorAll(rootSelector).forEach(box => {
       const img = box.querySelector("img");
@@ -619,32 +667,32 @@ document.addEventListener("DOMContentLoaded", () => {
       let lastTouchEnd = 0;
 
       function getPosFromEvent(e) {
+        // Accept either MouseEvent or a Touch-like object with clientX/clientY
         const boxRect = img.getBoundingClientRect();
         const clientX = (e.clientX !== undefined) ? e.clientX : (e.touches && e.touches[0] && e.touches[0].clientX);
         const clientY = (e.clientY !== undefined) ? e.clientY : (e.touches && e.touches[0] && e.touches[0].clientY);
 
-        const xPctContainer = Math.max(0, Math.min(1, (clientX - boxRect.left) / boxRect.width)) * 100;
-        const yPctContainer = Math.max(0, Math.min(1, (clientY - boxRect.top) / boxRect.height)) * 100;
+        // percent within container (box)
+        const xPctContainer = Math.max(0, Math.min(1, (clientX - boxRect.left) / (boxRect.width || 1))) * 100;
+        const yPctContainer = Math.max(0, Math.min(1, (clientY - boxRect.top) / (boxRect.height || 1))) * 100;
 
-        const naturalW = img.naturalWidth || img.width || 1;
-        const naturalH = img.naturalHeight || img.height || 1;
-        const clientW = boxRect.width;
-        const clientH = boxRect.height;
-
-        const scale = Math.min(clientW / naturalW, clientH / naturalH);
-        const renderedW = naturalW * scale;
-        const renderedH = naturalH * scale;
-
-        const offsetX = boxRect.left + (clientW - renderedW) / 2;
-        const offsetY = boxRect.top + (clientH - renderedH) / 2;
-
-        const insideImage = (clientX >= offsetX && clientX <= offsetX + renderedW && clientY >= offsetY && clientY <= offsetY + renderedH);
-
+        // compute rendered image rect to map into the image coordinates (honoring object-fit)
+        const rendered = computeRenderedImageRect(img);
+        let insideImage = false;
         let xPctImage = 0;
         let yPctImage = 0;
-        if (insideImage) {
-          xPctImage = Math.max(0, Math.min(1, (clientX - offsetX) / renderedW)) * 100;
-          yPctImage = Math.max(0, Math.min(1, (clientY - offsetY) / renderedH)) * 100;
+
+        if (rendered) {
+          insideImage = (clientX >= rendered.x && clientX <= rendered.x + rendered.width && clientY >= rendered.y && clientY <= rendered.y + rendered.height);
+          if (insideImage) {
+            xPctImage = Math.max(0, Math.min(1, (clientX - rendered.x) / (rendered.width || 1))) * 100;
+            yPctImage = Math.max(0, Math.min(1, (clientY - rendered.y) / (rendered.height || 1))) * 100;
+          }
+        } else {
+          // fallback: assume full box is image
+          insideImage = true;
+          xPctImage = xPctContainer;
+          yPctImage = yPctContainer;
         }
 
         return { xPctContainer, yPctContainer, xPctImage, yPctImage, insideImage };
@@ -978,6 +1026,7 @@ document.addEventListener("DOMContentLoaded", () => {
           const offY = dest.y + Math.round((dest.h - drawH) / 2);
           ctx.drawImage(img, offX, offY, drawW, drawH);
 
+          // compute DOM-rendered rect for this image (honoring object-fit), if possible
           let domBoxRect = null;
           try { domBoxRect = imgEl.getBoundingClientRect(); } catch (e) { domBoxRect = null; }
           let domNaturalW = img.naturalWidth || img.width || drawW;
@@ -987,27 +1036,45 @@ document.addEventListener("DOMContentLoaded", () => {
           let offsetX_dom = 0;
           let offsetY_dom = 0;
           if (domBoxRect && domNaturalW && domNaturalH) {
-            const boxW = domBoxRect.width || 1;
-            const boxH = domBoxRect.height || 1;
-            const scaleDom = Math.min(boxW / domNaturalW, boxH / domNaturalH);
-            renderedW_dom = domNaturalW * scaleDom;
-            renderedH_dom = domNaturalH * scaleDom;
-            offsetX_dom = (boxW - renderedW_dom) / 2;
-            offsetY_dom = (boxH - renderedH_dom) / 2;
+            // Use the same helper as in click mapping to match runtime rendering (object-fit aware)
+            const rendered = computeRenderedImageRect(imgEl);
+            if (rendered) {
+              // rendered.x/y are client coordinates; convert to offsets relative to domBoxRect.left/top
+              offsetX_dom = rendered.x - domBoxRect.left;
+              offsetY_dom = rendered.y - domBoxRect.top;
+              renderedW_dom = rendered.width;
+              renderedH_dom = rendered.height;
+            } else {
+              const boxW = domBoxRect.width || 1;
+              const boxH = domBoxRect.height || 1;
+              const scaleDom = Math.min(boxW / domNaturalW, boxH / domNaturalH);
+              renderedW_dom = domNaturalW * scaleDom;
+              renderedH_dom = domNaturalH * scaleDom;
+              offsetX_dom = (boxW - renderedW_dom) / 2;
+              offsetY_dom = (boxH - renderedH_dom) / 2;
+            }
           }
 
           const markers = markersAll[idx] || [];
           markers.forEach(m => {
+            // default mapping: percent within dest rect
             let x = dest.x + (m.xPct / 100) * dest.w;
             let y = dest.y + (m.yPct / 100) * dest.h;
 
             if (domBoxRect) {
+              // The stored xPct/yPct are relative to the container (box) when user placed markers.
+              // To map to canvas we convert percent -> pixel inside DOM box, then map relative to actual rendered image area,
+              // and then map into the canvas drawing coordinates (offX, offY, drawW, drawH).
               const px_dom = (m.xPct / 100) * domBoxRect.width;
               const py_dom = (m.yPct / 100) * domBoxRect.height;
+
+              // convert px_dom/py_dom into relative coords within the rendered image area
               const rx = (px_dom - offsetX_dom) / (renderedW_dom || 1);
               const ry = (py_dom - offsetY_dom) / (renderedH_dom || 1);
               const rxClamped = Math.max(0, Math.min(1, isFinite(rx) ? rx : 0));
               const ryClamped = Math.max(0, Math.min(1, isFinite(ry) ? ry : 0));
+
+              // map to canvas image drawn area
               x = offX + rxClamped * drawW;
               y = offY + ryClamped * drawH;
             } else {
@@ -2483,7 +2550,7 @@ document.addEventListener("DOMContentLoaded", () => {
     bottomLabel.style.padding = "6px";
     bottomLabel.style.fontWeight = "700";
     bottomLabel.style.textAlign = "center";
-    bottomLabel.textContent = "Gegner";
+    bottomLabel.textContent = "GegNER";
     bottomRow.appendChild(bottomLabel);
 
     const goalValueOptions = [];
