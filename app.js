@@ -1,8 +1,9 @@
 // app.js
-// Vollständige Datei zum 1:1 Ersetzen
-// Enthält alle bisherigen UI-/Layout-Fixes (left-align tables, scroll wrappers, season map alignment)
-// + aktualisierte exportSeasonMapPagePDF-Funktion, die versucht, die Momentum-Grafik als Bild in den Export
-// zu übernehmen (Canvas/IMG/SVG/foreignObject Fallback), sonst fällt sie auf Tabellen-Text-Rendering zurück.
+// Vollständige Datei. Ersetzt die bestehende app.js 1:1.
+// Diese Version enthält UI- und Layout-Fixes: linksausrichtete Season- & GoalValue-Tabellen,
+// horizontale Scroll-Wrapper, Shots%-Spalte, Mapping der Bild-Rendering-Eigenschaften zwischen Goal Map und Season Map,
+// defensive Fallbacks sowie aktualisierte exportSeasonMapPagePDF, die html2canvas nutzt (falls vorhanden)
+// um die Momentum-Grafik als Bild in den Export einzubetten.
 
 document.addEventListener("DOMContentLoaded", () => {
   // force stronger left-align styles for season & goalvalue tables (injected CSS)
@@ -1020,7 +1021,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // --- UPDATED: exportSeasonMapPagePDF with momentum-graphic capture (canvas/img/svg/foreignObject fallback) ---
+  // --- UPDATED: exportSeasonMapPagePDF with momentum-graphic capture (html2canvas preferred, fallbacks) ---
   async function exportSeasonMapPagePDF() {
     try {
       const CANVAS_W = 2480;
@@ -1185,126 +1186,128 @@ document.addEventListener("DOMContentLoaded", () => {
 
       await Promise.all(drawTasks);
 
-      // ---- NEW: try to render the momentum graphic as image (canvas/img/svg/DOM->svg fallback) ----
+      // ---- NEW: try to render the momentum graphic as image (html2canvas preferred, canvas/img/svg/foreignObject fallback) ----
       const momentumEl = document.querySelector('#momentumTable, .momentum-table, #seasonMapMomentum, .season-map-momentum');
       const labelX = MARGIN;
       let labelY = CANVAS_H - MARGIN - 140;
       ctx.fillStyle = '#000';
       ctx.font = '16px Arial';
 
-      async function elementToImage(el) {
-        if (!el) return null;
-
-        // prefer an internal canvas if present
-        const canvasChild = el.querySelector('canvas');
-        if (canvasChild) {
-          try {
-            const dataUrl = canvasChild.toDataURL('image/png');
-            const img = new Image();
-            img.src = dataUrl;
-            await new Promise(r => { img.onload = r; img.onerror = r; });
-            return img;
-          } catch (e) { /* fallthrough */ }
-        }
-
-        // prefer an inline image
-        const imgChild = el.querySelector('img');
-        if (imgChild && imgChild.src) {
-          try {
-            const img = await new Promise((resolve) => {
-              const i = new Image();
-              i.crossOrigin = 'anonymous';
-              i.onload = () => resolve(i);
-              i.onerror = () => resolve(null);
-              i.src = imgChild.src;
-            });
-            if (img) return img;
-          } catch (e) {}
-        }
-
-        // svg element present?
-        const svgChild = el.querySelector('svg');
-        if (svgChild) {
-          try {
-            const xml = new XMLSerializer().serializeToString(svgChild);
-            const svg64 = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
-            const img = new Image();
-            img.crossOrigin = 'anonymous';
-            await new Promise((resolve) => {
-              img.onload = resolve;
-              img.onerror = resolve;
-              img.src = svg64;
-            });
-            if (img && img.width) return img;
-          } catch (e) {}
-        }
-
-        // Fallback: try rendering the element HTML via foreignObject SVG (best-effort)
+      async function captureElementWithHtml2Canvas(el) {
+        if (!window.html2canvas) return null;
         try {
-          // compute bounding box from element
-          const rect = el.getBoundingClientRect();
-          const width = Math.max(300, Math.round(rect.width) || 600);
-          const height = Math.max(100, Math.round(rect.height) || 200);
-          let outer = el.outerHTML;
-          // sanitize by removing script tags (simple attempt)
-          outer = outer.replace(/<script[\s\S]*?<\/script>/gi, '');
-          const svgString = `<svg xmlns='http://www.w3.org/2000/svg' width='${width}' height='${height}'>
-            <foreignObject width='100%' height='100%'>
-              <div xmlns='http://www.w3.org/1999/xhtml' style='font-size:14px;color:#000;'>${outer}</div>
-            </foreignObject>
-          </svg>`;
-          const svg64 = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgString);
-          const img = new Image();
-          img.crossOrigin = 'anonymous';
-          await new Promise((resolve) => {
-            img.onload = resolve;
-            img.onerror = resolve;
-            img.src = svg64;
-          });
-          return img;
-        } catch (e) {
+          // ensure element visible and has size
+          const orig = { display: el.style.display || '', visibility: el.style.visibility || '', position: el.style.position || '' };
+          const needsTempUnhide = (getComputedStyle(el).display === 'none');
+          if (needsTempUnhide) {
+            el.style.display = 'block';
+            el.style.visibility = 'visible';
+            el.style.position = 'relative';
+          }
+
+          const canvasCaptured = await window.html2canvas(el, { backgroundColor: null, useCORS: true, scale: 2 });
+
+          if (needsTempUnhide) {
+            el.style.display = orig.display;
+            el.style.visibility = orig.visibility;
+            el.style.position = orig.position;
+          }
+          return canvasCaptured;
+        } catch (err) {
+          console.warn('html2canvas capture failed:', err);
           return null;
         }
       }
 
       if (momentumEl) {
         try {
-          const mImg = await elementToImage(momentumEl);
-          if (mImg) {
-            // decide a reasonable drawing size (fit into bottom area; keep aspect)
+          // try html2canvas first (most robust)
+          let mCanvas = null;
+          try { mCanvas = await captureElementWithHtml2Canvas(momentumEl); } catch (e) { mCanvas = null; }
+
+          if (mCanvas && mCanvas.width > 0 && mCanvas.height > 0) {
             const maxW = usableW;
             const maxH = Math.round(usableH * 0.18);
-            const aspect = (mImg.width && mImg.height) ? (mImg.width / mImg.height) : (maxW / maxH);
-            let drawW = Math.min(maxW, mImg.width || maxW);
+            const aspect = (mCanvas.width && mCanvas.height) ? (mCanvas.width / mCanvas.height) : (maxW / maxH);
+            let drawW = Math.min(maxW, mCanvas.width);
             let drawH = drawW / aspect;
             if (drawH > maxH) { drawH = maxH; drawW = Math.round(drawH * aspect); }
-            ctx.drawImage(mImg, labelX, labelY, drawW, drawH);
+            ctx.drawImage(mCanvas, labelX, labelY, drawW, drawH);
             labelY += drawH + 10;
           } else {
-            // fallback to table/text rendering if we couldn't convert
-            const rows = Array.from(momentumEl.querySelectorAll('tr'));
-            if (rows.length) {
-              ctx.fillText('Momentum:', labelX, labelY);
-              labelY += 20;
-              ctx.font = '13px Arial';
-              rows.slice(0, 12).forEach((tr) => {
-                const texts = Array.from(tr.querySelectorAll('th,td')).map(td => td.textContent.trim());
-                const line = texts.join('  ');
-                ctx.fillText(line, labelX, labelY);
-                labelY += 16;
-              });
-            } else {
-              ctx.fillText('Momentum (keine Grafik gefunden)', labelX, labelY);
-              labelY += 18;
-              ctx.font = '14px Arial';
-              const periods = Object.keys(timeData || {});
-              if (!periods.length) {
-                ctx.fillText('(keine Time-Data)', labelX, labelY);
+            // fallback to finding inner canvas/img/svg
+            let drawn = false;
+            try {
+              const innerCanvas = momentumEl.querySelector('canvas');
+              if (innerCanvas) {
+                ctx.drawImage(innerCanvas, labelX, labelY, Math.min(usableW, innerCanvas.width), Math.round(innerCanvas.height * (Math.min(usableW, innerCanvas.width) / innerCanvas.width)));
+                drawn = true;
               } else {
-                periods.forEach(k => {
-                  ctx.fillText(`${k}: ${JSON.stringify(timeData[k])}`, labelX, labelY);
-                  labelY += 14;
+                const innerImg = momentumEl.querySelector('img');
+                if (innerImg && innerImg.src) {
+                  const img = new Image();
+                  img.crossOrigin = 'anonymous';
+                  await new Promise(r => { img.onload = r; img.onerror = r; img.src = innerImg.src; });
+                  const maxW = usableW;
+                  const maxH = Math.round(usableH * 0.18);
+                  const aspect = (img.width && img.height) ? (img.width / img.height) : (maxW / maxH);
+                  let drawW = Math.min(maxW, img.width || maxW);
+                  let drawH = drawW / aspect;
+                  if (drawH > maxH) { drawH = maxH; drawW = Math.round(drawH * aspect); }
+                  ctx.drawImage(img, labelX, labelY, drawW, drawH);
+                  labelY += drawH + 10;
+                  drawn = true;
+                } else {
+                  const svgEl = momentumEl.querySelector('svg');
+                  if (svgEl) {
+                    const xml = new XMLSerializer().serializeToString(svgEl);
+                    const svg64 = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous';
+                    await new Promise(r => { img.onload = r; img.onerror = r; img.src = svg64; });
+                    const maxW = usableW;
+                    const maxH = Math.round(usableH * 0.18);
+                    const aspect = (img.width && img.height) ? (img.width / img.height) : (maxW / maxH);
+                    let drawW = Math.min(maxW, img.width || maxW);
+                    let drawH = drawW / aspect;
+                    if (drawH > maxH) { drawH = maxH; drawW = Math.round(drawH * aspect); }
+                    ctx.drawImage(img, labelX, labelY, drawW, drawH);
+                    labelY += drawH + 10;
+                    drawn = true;
+                  }
+                }
+              }
+            } catch (e) {
+              console.warn('fallback momentum draw failed:', e);
+              drawn = false;
+            }
+
+            if (!drawn) {
+              // last fallback: render table/text as before
+              const rows = Array.from(momentumEl.querySelectorAll('tr'));
+              if (rows.length) {
+                ctx.fillText('Momentum:', labelX, labelY);
+                labelY += 20;
+                ctx.font = '13px Arial';
+                rows.slice(0, 12).forEach((tr) => {
+                  const texts = Array.from(tr.querySelectorAll('th,td')).map(td => td.textContent.trim());
+                  const line = texts.join('  ');
+                  ctx.fillText(line, labelX, labelY);
+                  labelY += 16;
                 });
+              } else {
+                ctx.fillText('Momentum (keine Grafik gefunden)', labelX, labelY);
+                labelY += 18;
+                ctx.font = '14px Arial';
+                const periods = Object.keys(timeData || {});
+                if (!periods.length) {
+                  ctx.fillText('(keine Time-Data)', labelX, labelY);
+                } else {
+                  periods.forEach(k => {
+                    ctx.fillText(`${k}: ${JSON.stringify(timeData[k])}`, labelX, labelY);
+                    labelY += 14;
+                  });
+                }
               }
             }
           }
