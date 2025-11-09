@@ -1,10 +1,8 @@
 // app.js
-// Vollständige Datei. Ersetzt die bestehende app.js 1:1.
-// Änderungen in dieser Version:
-// - Season- und GoalValue-Tabellen bekommen eine horizontale Scrollbar, damit alle Spalten erreichbar sind.
-// - Inline/CSS-Injection erweitert: .table-scroll Wrapper & table { white-space: nowrap } sowie mobil freundliches Scrolling.
-// - Beim Rendern werden Tabellen in einen scrollbaren Wrapper gelegt (renderSeasonTable & renderGoalValuePage).
-// - Sonstige Logik und vorherige Fixes unverändert übernommen.
+// Vollständige Datei zum 1:1 Ersetzen
+// Enthält alle bisherigen UI-/Layout-Fixes (left-align tables, scroll wrappers, season map alignment)
+// + aktualisierte exportSeasonMapPagePDF-Funktion, die versucht, die Momentum-Grafik als Bild in den Export
+// zu übernehmen (Canvas/IMG/SVG/foreignObject Fallback), sonst fällt sie auf Tabellen-Text-Rendering zurück.
 
 document.addEventListener("DOMContentLoaded", () => {
   // force stronger left-align styles for season & goalvalue tables (injected CSS)
@@ -72,6 +70,29 @@ document.addEventListener("DOMContentLoaded", () => {
       #seasonContainer .table-scroll::-webkit-scrollbar-thumb, #goalValueContainer .table-scroll::-webkit-scrollbar-thumb {
         background: rgba(0,0,0,0.2);
         border-radius: 6px;
+      }
+
+      /* Desktop: full-width tables without horizontal scroll (truncate with ellipsis) */
+      @media (min-width: 1200px) {
+        #seasonContainer, #goalValueContainer {
+          width: 100vw !important;
+          overflow: visible !important;
+        }
+        #seasonContainer .table-scroll, #goalValueContainer .table-scroll {
+          overflow-x: hidden !important;
+        }
+        #seasonContainer table, #goalValueContainer table {
+          width: calc(100vw - 24px) !important;
+          table-layout: fixed !important;
+          white-space: nowrap !important;
+          font-size: 13px !important;
+        }
+        #seasonContainer table th, #seasonContainer table td,
+        #goalValueContainer table th, #goalValueContainer table td {
+          overflow: hidden !important;
+          text-overflow: ellipsis !important;
+          white-space: nowrap !important;
+        }
       }
     `;
     document.head.appendChild(style);
@@ -999,6 +1020,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // --- UPDATED: exportSeasonMapPagePDF with momentum-graphic capture (canvas/img/svg/foreignObject fallback) ---
   async function exportSeasonMapPagePDF() {
     try {
       const CANVAS_W = 2480;
@@ -1163,35 +1185,132 @@ document.addEventListener("DOMContentLoaded", () => {
 
       await Promise.all(drawTasks);
 
-      // Render Momentum table (falls vorhanden) oder TimeData (Fallback)
+      // ---- NEW: try to render the momentum graphic as image (canvas/img/svg/DOM->svg fallback) ----
       const momentumEl = document.querySelector('#momentumTable, .momentum-table, #seasonMapMomentum, .season-map-momentum');
       const labelX = MARGIN;
       let labelY = CANVAS_H - MARGIN - 140;
-
       ctx.fillStyle = '#000';
       ctx.font = '16px Arial';
-      if (momentumEl) {
-        ctx.fillText('Momentum:', labelX, labelY);
-        labelY += 20;
-        ctx.font = '13px Arial';
+
+      async function elementToImage(el) {
+        if (!el) return null;
+
+        // prefer an internal canvas if present
+        const canvasChild = el.querySelector('canvas');
+        if (canvasChild) {
+          try {
+            const dataUrl = canvasChild.toDataURL('image/png');
+            const img = new Image();
+            img.src = dataUrl;
+            await new Promise(r => { img.onload = r; img.onerror = r; });
+            return img;
+          } catch (e) { /* fallthrough */ }
+        }
+
+        // prefer an inline image
+        const imgChild = el.querySelector('img');
+        if (imgChild && imgChild.src) {
+          try {
+            const img = await new Promise((resolve) => {
+              const i = new Image();
+              i.crossOrigin = 'anonymous';
+              i.onload = () => resolve(i);
+              i.onerror = () => resolve(null);
+              i.src = imgChild.src;
+            });
+            if (img) return img;
+          } catch (e) {}
+        }
+
+        // svg element present?
+        const svgChild = el.querySelector('svg');
+        if (svgChild) {
+          try {
+            const xml = new XMLSerializer().serializeToString(svgChild);
+            const svg64 = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            await new Promise((resolve) => {
+              img.onload = resolve;
+              img.onerror = resolve;
+              img.src = svg64;
+            });
+            if (img && img.width) return img;
+          } catch (e) {}
+        }
+
+        // Fallback: try rendering the element HTML via foreignObject SVG (best-effort)
         try {
-          const rows = Array.from(momentumEl.querySelectorAll('tr'));
-          if (rows.length) {
-            rows.slice(0, 12).forEach((tr) => {
-              const texts = Array.from(tr.querySelectorAll('th,td')).map(td => td.textContent.trim());
-              const line = texts.join('  ');
-              ctx.fillText(line, labelX, labelY);
-              labelY += 16;
-            });
+          // compute bounding box from element
+          const rect = el.getBoundingClientRect();
+          const width = Math.max(300, Math.round(rect.width) || 600);
+          const height = Math.max(100, Math.round(rect.height) || 200);
+          let outer = el.outerHTML;
+          // sanitize by removing script tags (simple attempt)
+          outer = outer.replace(/<script[\s\S]*?<\/script>/gi, '');
+          const svgString = `<svg xmlns='http://www.w3.org/2000/svg' width='${width}' height='${height}'>
+            <foreignObject width='100%' height='100%'>
+              <div xmlns='http://www.w3.org/1999/xhtml' style='font-size:14px;color:#000;'>${outer}</div>
+            </foreignObject>
+          </svg>`;
+          const svg64 = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgString);
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          await new Promise((resolve) => {
+            img.onload = resolve;
+            img.onerror = resolve;
+            img.src = svg64;
+          });
+          return img;
+        } catch (e) {
+          return null;
+        }
+      }
+
+      if (momentumEl) {
+        try {
+          const mImg = await elementToImage(momentumEl);
+          if (mImg) {
+            // decide a reasonable drawing size (fit into bottom area; keep aspect)
+            const maxW = usableW;
+            const maxH = Math.round(usableH * 0.18);
+            const aspect = (mImg.width && mImg.height) ? (mImg.width / mImg.height) : (maxW / maxH);
+            let drawW = Math.min(maxW, mImg.width || maxW);
+            let drawH = drawW / aspect;
+            if (drawH > maxH) { drawH = maxH; drawW = Math.round(drawH * aspect); }
+            ctx.drawImage(mImg, labelX, labelY, drawW, drawH);
+            labelY += drawH + 10;
           } else {
-            const lines = momentumEl.innerText.split(/\r?\n/).map(l => l.trim()).filter(l => l);
-            lines.slice(0, 10).forEach(ln => {
-              ctx.fillText(ln, labelX, labelY);
-              labelY += 16;
-            });
+            // fallback to table/text rendering if we couldn't convert
+            const rows = Array.from(momentumEl.querySelectorAll('tr'));
+            if (rows.length) {
+              ctx.fillText('Momentum:', labelX, labelY);
+              labelY += 20;
+              ctx.font = '13px Arial';
+              rows.slice(0, 12).forEach((tr) => {
+                const texts = Array.from(tr.querySelectorAll('th,td')).map(td => td.textContent.trim());
+                const line = texts.join('  ');
+                ctx.fillText(line, labelX, labelY);
+                labelY += 16;
+              });
+            } else {
+              ctx.fillText('Momentum (keine Grafik gefunden)', labelX, labelY);
+              labelY += 18;
+              ctx.font = '14px Arial';
+              const periods = Object.keys(timeData || {});
+              if (!periods.length) {
+                ctx.fillText('(keine Time-Data)', labelX, labelY);
+              } else {
+                periods.forEach(k => {
+                  ctx.fillText(`${k}: ${JSON.stringify(timeData[k])}`, labelX, labelY);
+                  labelY += 14;
+                });
+              }
+            }
           }
         } catch (e) {
-          ctx.fillText('(Momentum konnte nicht gelesen werden, Time Tracking stattdessen):', labelX, labelY);
+          // best-effort fallback
+          ctx.fillText('Momentum (konnte nicht als Bild exportiert werden):', labelX, labelY);
           labelY += 18;
           ctx.font = '14px Arial';
           const periods = Object.keys(timeData || {});
@@ -1205,6 +1324,7 @@ document.addEventListener("DOMContentLoaded", () => {
           }
         }
       } else {
+        // no momentum element present -> fallback: render timeData as before
         ctx.fillText('Time Tracking (Season Map):', labelX, labelY);
         labelY += 22;
         const periods = Object.keys(timeData || {});
