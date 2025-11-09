@@ -1,21 +1,15 @@
 // app.js
 // Vollständige Datei zum 1:1 Ersetzen
 // Änderungen / Wichtig:
-// - Season-Tabelle: Namen fett und linksbündig
-// - PDF-Export: versucht zuerst die Momentum-Tabelle (sofern im DOM vorhanden) zu übernehmen,
-//   sonst fällt er auf Time-Tracking zurück.
-// - PDF-Export: Marker-Positionen in Goal-Boxen werden jetzt auf Grundlage der tatsächlichen
-//   Bild-Render-Position im DOM berechnet, um vertikale/ horizontale Verschiebungen zu vermeiden.
-// - Diverse Fallbacks und defensive Prüfungen ergänzt.
-// - Fix: entfernte doppelte Declaration von `momentumEl`, um SyntaxError zu vermeiden.
-// - Zusätzliche Fixes: Berücksichtigung von CSS object-fit (cover / contain / fill / none) beim
-//   Berechnen der tatsächlichen Bild-Render-Größe für Marker (Click-Positionen & PDF-Export).
-// - Neue Spalte "Shots %" in Season-Tabelle (zwischen Shots/Game und Goals/Game) mit
-//   Schuss-zu-Tor-Verhältnis (goals/shots * 100, 0% falls keine Schüsse).
-// - Season- und GoalValue-Tabellen linksbündig gemacht (marginLeft / marginRight angepasst).
-// - Season-Map: Bilder in den Goal-Boxen werden in renderSeasonMapPage jetzt so gestylt,
-//   dass sie die Boxen besser ausfüllen (object-fit: cover; width/height:100%), damit Marker
-//   Positionen übereinstimmen. Export-Logik berücksichtigt weiterhin das tatsächliche gerenderte Bild.
+// - Season-Map: Bilder und Boxen werden jetzt (so gut wie möglich) an die Goal-Map-Boxen angeglichen.
+//   Statt indiscriminately object-fit:cover zu setzen, kopiert renderSeasonMapPage jetzt bei Bedarf die
+//   relevanten Render-Parameter (object-fit und gerenderte Box-Größe) von den entsprechenden Goal-Map-Boxen.
+//   Dadurch füllen die Bilder in Season Map genau so die Boxen wie auf der Goal Map Seite und die Marker
+//   stimmen mit der sichtbaren Position überein.
+// - Season-Tabelle: die neue Spalte "Shots %" bleibt erhalten (zwischen Shots/Game und Goals/Game).
+// - Season- und GoalValue-Container wurden stärker linksbündig ausgerichtet (flex / justify-start, margin reset),
+//   damit nicht links so viel Leerraum entsteht und Tabellen nicht rechtsbündig wirken.
+// - Kleinere defensive Prüfungen beibehalten.
 
 document.addEventListener("DOMContentLoaded", () => {
   // --- Elements (buttons remain in DOM per page) ---
@@ -1315,19 +1309,57 @@ document.addEventListener("DOMContentLoaded", () => {
     const boxes = Array.from(document.querySelectorAll(seasonMapBoxesSelector));
     boxes.forEach(box => box.querySelectorAll(".marker-dot").forEach(d => d.remove()));
 
-    // Ensure season-map images fill their box (makes marker mapping consistent with Goal Map)
-    boxes.forEach(box => {
-      const img = box.querySelector("img");
-      if (img) {
-        try {
-          img.style.objectFit = img.style.objectFit || 'cover'; // prefer cover so box is filled
-          img.style.width = img.style.width || '100%';
-          img.style.height = img.style.height || '100%';
-          // ensure container hides overflow so cover crops as expected
-          box.style.overflow = box.style.overflow || 'hidden';
-        } catch (e) {}
-      }
-    });
+    // Align season-map box images to match exactly the appearance of the Goal Map (torbild)
+    try {
+      const torBoxes = Array.from(document.querySelectorAll(torbildBoxesSelector));
+      boxes.forEach((seasonBox, idx) => {
+        const seasonImg = seasonBox.querySelector('img');
+        // find corresponding torbild box (by index) and copy relevant render properties
+        const torBox = torBoxes[idx];
+        if (seasonImg && torBox) {
+          const torImg = torBox.querySelector('img');
+          if (torImg) {
+            try {
+              // copy object-fit from torbild image so rendering/covering is identical
+              const torCS = getComputedStyle(torImg);
+              const torObjectFit = torCS.getPropertyValue('object-fit') || 'contain';
+              seasonImg.style.objectFit = torObjectFit;
+              // copy width/height as computed sizes to ensure visual parity (use pixel values)
+              const torRect = torImg.getBoundingClientRect();
+              if (torRect && torRect.width && torRect.height) {
+                // Apply same client size to season image and its container so they appear identical
+                seasonImg.style.width = `${Math.round(torRect.width)}px`;
+                seasonImg.style.height = `${Math.round(torRect.height)}px`;
+                seasonBox.style.width = `${Math.round(torRect.width)}px`;
+                seasonBox.style.height = `${Math.round(torRect.height)}px`;
+                seasonBox.style.overflow = 'hidden';
+              } else {
+                // fallback to 100% so it still fills the box
+                seasonImg.style.width = seasonImg.style.width || '100%';
+                seasonImg.style.height = seasonImg.style.height || '100%';
+                seasonBox.style.overflow = 'hidden';
+              }
+            } catch (e) {
+              seasonImg.style.objectFit = seasonImg.style.objectFit || 'contain';
+              seasonImg.style.width = seasonImg.style.width || '100%';
+              seasonImg.style.height = seasonImg.style.height || '100%';
+              seasonBox.style.overflow = seasonBox.style.overflow || 'hidden';
+            }
+          }
+        } else {
+          // fallback: keep season images contained to their box
+          const img = seasonBox.querySelector('img');
+          if (img) {
+            img.style.objectFit = img.style.objectFit || 'contain';
+            img.style.width = img.style.width || '100%';
+            img.style.height = img.style.height || '100%';
+            seasonBox.style.overflow = seasonBox.style.overflow || 'hidden';
+          }
+        }
+      });
+    } catch (e) {
+      // ignore layout copy errors
+    }
 
     const raw = localStorage.getItem("seasonMapMarkers");
     if (raw) {
@@ -1558,8 +1590,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!container) return;
     container.innerHTML = "";
 
-    // Move table more to the left: ensure container and table styles are left-aligned
-    container.style.textAlign = container.style.textAlign || "left";
+    // Stronger left alignment: use flex container and left justify
+    container.style.display = 'flex';
+    container.style.justifyContent = 'flex-start';
+    container.style.alignItems = 'flex-start';
+    container.style.paddingLeft = container.style.paddingLeft || '8px';
 
     const headerCols = [
       "Nr", "Spieler", "Games",
@@ -1572,9 +1607,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const table = document.createElement("table");
     table.className = "stats-table";
     table.style.width = table.style.width || "auto";
-    table.style.marginLeft = "0";
-    table.style.marginRight = "auto";
-
+    table.style.margin = "0"; // remove margin so it sits left
     table.style.borderRadius = "8px";
     table.style.overflow = "hidden";
     table.style.borderCollapse = "separate";
@@ -2348,14 +2381,17 @@ document.addEventListener("DOMContentLoaded", () => {
     const bottom = getGoalValueBottom();
     const playerNames = Object.keys(seasonData).length ? Object.keys(seasonData).sort() : selectedPlayers.map(p=>p.name);
 
-    // Align table more to the left
-    goalValueContainer.style.textAlign = goalValueContainer.style.textAlign || "left";
+    // Strong left alignment for goal value
+    try {
+      goalValueContainer.style.display = 'flex';
+      goalValueContainer.style.justifyContent = 'flex-start';
+      goalValueContainer.style.paddingLeft = goalValueContainer.style.paddingLeft || '8px';
+    } catch (e) {}
 
     const table = document.createElement("table");
     table.className = "goalvalue-table";
     table.style.width = table.style.width || "auto";
-    table.style.marginLeft = "0";
-    table.style.marginRight = "auto";
+    table.style.margin = "0";
     table.style.borderCollapse = "collapse";
     table.style.borderRadius = "8px";
     table.style.overflow = "hidden";
