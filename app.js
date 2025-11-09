@@ -1,17 +1,62 @@
 // app.js
-// Vollständige Datei zum 1:1 Ersetzen
-// Änderungen / Wichtig:
-// - Season-Map: Bilder und Boxen werden jetzt (so gut wie möglich) an die Goal-Map-Boxen angeglichen.
-//   Statt indiscriminately object-fit:cover zu setzen, kopiert renderSeasonMapPage jetzt bei Bedarf die
-//   relevanten Render-Parameter (object-fit und gerenderte Box-Größe) von den entsprechenden Goal-Map-Boxen.
-//   Dadurch füllen die Bilder in Season Map genau so die Boxen wie auf der Goal Map Seite und die Marker
-//   stimmen mit der sichtbaren Position überein.
-// - Season-Tabelle: die neue Spalte "Shots %" bleibt erhalten (zwischen Shots/Game und Goals/Game).
-// - Season- und GoalValue-Container wurden stärker linksbündig ausgerichtet (flex / justify-start, margin reset),
-//   damit nicht links so viel Leerraum entsteht und Tabellen nicht rechtsbündig wirken.
-// - Kleinere defensive Prüfungen beibehalten.
+// Vollständige Datei. Ersetzt die bestehende app.js 1:1.
+// Diese Version enthält UI- und Layout-Fixes: linksausrichtete Season- & GoalValue-Tabellen,
+// Shots%-Spalte in Season-Tabelle, Mapping von Bild-Render-Parametern zur Angleichung von
+// Goal Map und Season Map, sowie defensive Prüfungen und Export-Logik.
 
 document.addEventListener("DOMContentLoaded", () => {
+  // force stronger left-align styles for season & goalvalue tables (injected CSS)
+  (function forceStrongerLeftAlign(){
+    const existing = document.getElementById('season-goalvalue-left-align');
+    if (existing) existing.remove();
+
+    const style = document.createElement('style');
+    style.id = 'season-goalvalue-left-align';
+    style.textContent = `
+      /* Container: am linken Rand ausrichten, kein innerer Abstand */
+      #seasonContainer, #goalValueContainer {
+        display: flex !important;
+        justify-content: flex-start !important;
+        align-items: flex-start !important;
+        padding-left: 0 !important;
+        margin-left: 0 !important;
+        box-sizing: border-box !important;
+        width: 100% !important;
+      }
+
+      /* Tabellen: ganz links positionieren, keine automatische Zentrierung */
+      #seasonContainer table, #goalValueContainer table {
+        display: block !important;
+        margin-left: 0 !important;
+        margin-right: auto !important;
+        width: auto !important;
+        max-width: none !important;
+        box-sizing: border-box !important;
+      }
+
+      /* ggf. vorhandenen Innenabstand des übergeordneten Elements neutralisieren */
+      #seasonContainer, #seasonPage, #goalValueContainer, #goalValuePage {
+        padding-left: 0 !important;
+        margin-left: 0 !important;
+      }
+
+      /* Zellen links ausrichten, für bessere Lesbarkeit bei vielen Spalten */
+      #seasonContainer table th, #seasonContainer table td,
+      #goalValueContainer table th, #goalValueContainer table td {
+        text-align: left !important;
+        padding-left: 8px !important;
+      }
+
+      /* Falls die Seite einen globalen content-wrapper hat, der Zentrierung erzwingt,
+         entferne dessen horizontale padding/margin innerhalb der beiden Seiten */
+      #seasonPage .content-wrapper, #goalValuePage .content-wrapper {
+        padding-left: 0 !important;
+        margin-left: 0 !important;
+      }
+    `;
+    document.head.appendChild(style);
+  })();
+
   // --- Elements (buttons remain in DOM per page) ---
   const pages = {
     selection: document.getElementById("playerSelectionPage"),
