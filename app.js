@@ -1,8 +1,10 @@
 // app.js
 // Vollständige Datei. Ersetzt die bestehende app.js 1:1.
-// Diese Version enthält UI- und Layout-Fixes: linksausrichtete Season- & GoalValue-Tabellen,
-// Shots%-Spalte in Season-Tabelle, Mapping von Bild-Render-Parametern zur Angleichung von
-// Goal Map und Season Map, sowie defensive Prüfungen und Export-Logik.
+// Änderungen in dieser Version:
+// - Season- und GoalValue-Tabellen bekommen eine horizontale Scrollbar, damit alle Spalten erreichbar sind.
+// - Inline/CSS-Injection erweitert: .table-scroll Wrapper & table { white-space: nowrap } sowie mobil freundliches Scrolling.
+// - Beim Rendern werden Tabellen in einen scrollbaren Wrapper gelegt (renderSeasonTable & renderGoalValuePage).
+// - Sonstige Logik und vorherige Fixes unverändert übernommen.
 
 document.addEventListener("DOMContentLoaded", () => {
   // force stronger left-align styles for season & goalvalue tables (injected CSS)
@@ -24,9 +26,18 @@ document.addEventListener("DOMContentLoaded", () => {
         width: 100% !important;
       }
 
-      /* Tabellen: ganz links positionieren, keine automatische Zentrierung */
+      /* Scroll wrapper für Tabellen: horizontales Scrollen ermöglichen */
+      #seasonContainer .table-scroll, #goalValueContainer .table-scroll {
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        -webkit-overflow-scrolling: touch !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+      }
+
+      /* Tabellen: nicht umbrechen, so entstehen horizontale Scrollbars statt abgeschnittene Spalten */
       #seasonContainer table, #goalValueContainer table {
-        display: block !important;
+        white-space: nowrap !important;
         margin-left: 0 !important;
         margin-right: auto !important;
         width: auto !important;
@@ -52,6 +63,15 @@ document.addEventListener("DOMContentLoaded", () => {
       #seasonPage .content-wrapper, #goalValuePage .content-wrapper {
         padding-left: 0 !important;
         margin-left: 0 !important;
+      }
+
+      /* Optional: kleine Pfeile für sichtbarere Scrollbar auf Desktop */
+      #seasonContainer .table-scroll::-webkit-scrollbar, #goalValueContainer .table-scroll::-webkit-scrollbar {
+        height: 12px;
+      }
+      #seasonContainer .table-scroll::-webkit-scrollbar-thumb, #goalValueContainer .table-scroll::-webkit-scrollbar-thumb {
+        background: rgba(0,0,0,0.2);
+        border-radius: 6px;
       }
     `;
     document.head.appendChild(style);
@@ -1903,7 +1923,15 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     table.appendChild(tbody);
-    container.appendChild(table);
+
+    // Wrap the table in a horizontal scroll wrapper so all columns remain accessible
+    const wrapper = document.createElement('div');
+    wrapper.className = 'table-scroll';
+    wrapper.style.width = '100%';
+    wrapper.style.boxSizing = 'border-box';
+    wrapper.appendChild(table);
+
+    container.appendChild(wrapper);
 
     function updateSortUI() {
       const ths = table.querySelectorAll("th.sortable");
@@ -2710,7 +2738,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
     tbody.appendChild(bottomRow);
     table.appendChild(tbody);
-    goalValueContainer.appendChild(table);
+
+    // Wrap goalvalue table in scroll wrapper so all columns are accessible
+    const wrapper = document.createElement('div');
+    wrapper.className = 'table-scroll';
+    wrapper.style.width = '100%';
+    wrapper.style.boxSizing = 'border-box';
+    wrapper.appendChild(table);
+
+    goalValueContainer.appendChild(wrapper);
   }
 
   function resetGoalValuePage() {
